@@ -25,6 +25,12 @@ variable "class_name" {
   default     = "FortiADC Workshop"
 }
 
+variable "portal_title" {
+  description = "Workshop title shown on the student and admin portals. Empty = class_name. Safe to change on a running class (class_name is not: it names the FGT and the bucket)."
+  type        = string
+  default     = "FortiADC: Local Load Balancer, GSLB, Web App publishing"
+}
+
 variable "student_count" {
   description = "Number of pods to build (registered students + a spare or two)"
   type        = number

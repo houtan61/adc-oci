@@ -18,6 +18,7 @@ No roster = open check-in (passphrase + name + email).
 """
 
 import argparse
+import base64
 import csv
 import email
 import email.policy
@@ -177,7 +178,9 @@ def verify(value):
 
 CSS = """
 body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:#f4f5f7;color:#1d1d1f}
-header{background:#da291c;color:#fff;padding:18px 28px;font-size:20px;font-weight:600}
+header{background:#1f1f1f;color:#fff;padding:14px 28px;border-bottom:4px solid #da291c;display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+header img{height:24px;display:block}
+header span{font-size:18px;font-weight:600;letter-spacing:.2px}
 main{max-width:820px;margin:28px auto;padding:0 20px}
 .card{background:#fff;border-radius:10px;padding:24px 28px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:20px}
 h1{font-size:22px;margin:0 0 6px} h2{font-size:17px;margin:0 0 12px}
@@ -193,12 +196,24 @@ code{background:#f1f1f3;padding:2px 6px;border-radius:4px;font-size:13px}
 """
 
 
+LOGO_PNG = base64.b64decode(
+    "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")
+
+
+def title_of(cfg):
+    return cfg.get("portal_title") or cfg.get("class_name", "Lab")
+
+
+def header_html(title):
+    return f"<header><img src='/logo.png' alt='Fortinet'><span>{title}</span></header>"
+
+
 def page(cfg, body):
-    title = html.escape(cfg.get("class_name", "Lab"))
+    title = html.escape(title_of(cfg))
     return (f"<!doctype html><html><head><meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>{title}</title><style>{CSS}</style></head>"
-            f"<body><header>{title}</header><main>{body}</main></body></html>")
+            f"<body>{header_html(title)}<main>{body}</main></body></html>")
 
 
 def checkin_form(cfg, roster, error="", email=""):
@@ -247,7 +262,7 @@ def pod_page(cfg, pod, who):
                    f"<p><a class='btn' style='margin-top:0' href='{url}' target='_blank'>Open the lab console</a></p>"
                    f"<p>Log in as <code>{html.escape(g['user'])}</code> / <code>{html.escape(g.get('password') or '')}</code>. "
                    f"It shows your topology and the SERIAL / SSH / VNC buttons for every device.</p>"
-                   f"<p class='muted'>Its HTTP / HTTPS buttons don't work from here: use the device links below.</p></div>")
+                   f"</div>")
     creds = "".join(
         f"<tr><td>{html.escape(c['device'])}</td><td><code>{html.escape(c['user'])}</code></td>"
         f"<td><code>{html.escape(c['password'])}</code></td></tr>" for c in cfg.get("credentials", []))
@@ -307,6 +322,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         cfg = load_config()
         path = urllib.parse.urlparse(self.path).path
+        if path == "/logo.png":
+            return self._send(200, LOGO_PNG, "image/png")
         if path == "/healthz":
             st = load_state()
             return self._send(200, json.dumps({
@@ -748,14 +765,16 @@ class AdminHandler(Handler):
 <label>User</label><input name='user' value='admin' autocomplete='username'>
 <label>Password</label><input name='password' type='password' autofocus autocomplete='current-password'>
 <button type='submit'>Log in</button></form>{err}</div>"""
-        title = html.escape(cfg.get("class_name", "Lab")) + " — admin"
+        title = html.escape(title_of(cfg)) + " — admin"
         return (f"<!doctype html><html><head><meta charset='utf-8'><title>{title}</title>"
                 f"<meta name='viewport' content='width=device-width,initial-scale=1'><style>{CSS}</style></head>"
-                f"<body><header>{title}</header><main>{body}</main></body></html>")
+                f"<body>{header_html(title)}<main>{body}</main></body></html>")
 
     def do_GET(self):
         cfg = load_config()
         u = urllib.parse.urlparse(self.path)
+        if u.path == "/logo.png":
+            return self._send(200, LOGO_PNG, "image/png")
         if u.path == "/logout":
             return self._redirect("/", f"{self.COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict")
         if not self._authed():
@@ -928,9 +947,9 @@ def admin_page(cfg, msg=""):
     note = f"<div class='msg'>{html.escape(msg)}</div>" if msg else ""
     health_card = health_html(cfg)
     license_card = license_html(cfg)
-    title = html.escape(cfg.get("class_name", "Lab")) + " — admin"
+    title = html.escape(title_of(cfg)) + " — admin"
     return f"""<!doctype html><html><head><meta charset='utf-8'><title>{title}</title>
-<meta http-equiv='refresh' content='15'><style>{ADMIN_CSS}</style></head><body><header>{title}</header><main>
+<meta http-equiv='refresh' content='15'><style>{ADMIN_CSS}</style></head><body>{header_html(title)}<main>
 {note}
 <div class='stats'>
 <div class='stat'><b>{s['assigned']}/{s['pods']}</b><span>pods in use</span></div>

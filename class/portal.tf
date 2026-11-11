@@ -12,6 +12,7 @@ locals {
 
   portal_config = {
     class_name     = var.class_name
+    portal_title   = var.portal_title
     passphrase     = var.portal_passphrase
     public_host    = local.public_host
     port_base      = var.port_base

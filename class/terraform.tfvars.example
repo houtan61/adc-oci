@@ -2,7 +2,8 @@ region           = "ap-sydney-1"
 compartment_ocid = "ocid1.compartment.oc1..xxxx"
 name_prefix      = "adclab"
 
-class_name    = "FortiADC Workshop"
+class_name    = "FortiADC Workshop" # names the FGT + bucket: don't change on a running class
+portal_title  = "FortiADC: Local Load Balancer, GSLB, Web App publishing"
 student_count = 18 # 17 registered + 1 spare
 
 # Who can reach what
