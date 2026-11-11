@@ -27,6 +27,7 @@ locals {
         service    = s.name
         proto      = s.proto
         user       = s.user != "" ? s.user : "admin"
+        path       = s.path
       }
     ]
   ])

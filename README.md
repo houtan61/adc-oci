@@ -53,16 +53,24 @@ several minutes after OCI says *Running*.
 1. `builder_enabled = true` in `base/terraform.tfvars`, `terraform apply`, open `builder_gui`.
 2. Import the exported FortiADC instance into Fabric Studio, point FS at the licence server
    (`http://10.20.3.10`), install the fabric and check that the FortiADCs license.
-3. Check the **FS port forwards** the front FortiGate points at (pod port → device HTTPS). The imported
-   lab already has FS's built-in 13xxx forwards; the defaults use them:
-   They must match `services` in `class/variables.tf`; the defaults are:
+3. Make the device **HTTPS accesses PUBLIC**. FS publishes them through its reverse proxy on 13xxx, and by
+   default (PRIVATE) they only answer a browser logged in to that FS GUI, so through the FortiGate they 404.
+   On the builder's FS CLI:
+   ```
+   system security preferences set '{"https_public_allowed": "yes"}'
+   system security preferences set '{"web_session_age": 28800}'     # guest/admin web session 8 h (default 1 h)
+   model vm access list                                            # find the HTTPS access IDs
+   model vm access update <ID> '{"mode": "PUBLIC"}'                # FAD-Cannes 13002, FAD-Sunnyvale 13004, FGT 13006
+   ```
+   "Public" only means no FS login on that port; only the front FortiGate reaches it (venue + admin CIDRs).
+   The defaults in `services` use them:
 
    | Suffix | Pod port | Target | Portal shows |
    | --- | --- | --- | --- |
    | 00 | 443 | FS GUI | "Lab console" link + guest login |
-   | 01 | 13002 | FADCa1 HTTPS (FS built-in forward) | FAD-Cannes GUI |
-   | 03 | 13004 | FADSu1 HTTPS (FS built-in forward) | FAD-Sunnyvale GUI |
-   | 05 | 13006 | FGT HTTPS (FS built-in forward) | Internet FortiGate GUI |
+   | 01 | 13002 | FAD-Cannes HTTPS, path `/ui/` | FAD-Cannes GUI |
+   | 03 | 13004 | FAD-Sunnyvale HTTPS, path `/ui/` | FAD-Sunnyvale GUI |
+   | 05 | 13006 | FGT-internet-router HTTPS | Internet FortiGate GUI |
 
    Student N's external port = 20000 + (N−1)×20 + suffix (s01: 20001…, s02: 20021…).
    Need more devices (DNS servers, web servers)? Add `services` entries (suffix < 20) and/or `web_terminals` lines.

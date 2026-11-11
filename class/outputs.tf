@@ -33,7 +33,7 @@ resource "local_file" "access_csv" {
     ["pod,service,url"],
     [for v in local.vips : format("%s,%s,%s", v.pod, v.service,
       v.proto == "ssh" ? "ssh -p ${v.ext_port} ${v.user}@${local.public_host}" :
-      v.proto == "https" ? "https://${local.public_host}:${v.ext_port}/" :
+      v.proto == "https" ? "https://${local.public_host}:${v.ext_port}${v.path}" :
       "${local.public_host}:${v.ext_port}"
     )],
     [""]

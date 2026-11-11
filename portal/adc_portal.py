@@ -226,7 +226,7 @@ def pod_page(cfg, pod, who):
         port = p["port_start"] + s["suffix"]
         label = html.escape(s["label"])
         if s["proto"] == "https":
-            url = f"https://{host}:{port}/"
+            url = f"https://{host}:{port}{s.get('path') or '/'}"
             rows.append(f"<tr><td>{label}</td><td><a href='{url}' target='_blank'>{url}</a></td></tr>")
         elif s["proto"] == "ssh":
             user = s.get("user") or "admin"

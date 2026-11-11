@@ -198,6 +198,7 @@ variable "services" {
       proto      : https | ssh | other  (how the portal shows it)
       user       : login shown on the portal for ssh lines (optional)
       admin_only : true = instructor CIDRs only, not shown to students
+      path       : URL path for https links (FS publishes FortiADC under /ui/)
       show       : false = reachable by students but not listed on the portal (e.g. the FS GUI
                    that carries the web terminals)
   EOT
@@ -210,12 +211,14 @@ variable "services" {
     user       = optional(string, "")
     admin_only = optional(bool, false)
     show       = optional(bool, true)
+    path       = optional(string, "/")
   }))
   default = [
     # FS GUI: students log in as guest (lab console link on the portal), so not admin_only, but not listed
     { name = "fsgui", label = "Fabric Studio GUI", suffix = 0, clone_port = 443, proto = "https", show = false },
-    { name = "fadc-gui", label = "FAD-Cannes GUI", suffix = 1, clone_port = 13002, proto = "https" },
-    { name = "fads-gui", label = "FAD-Sunnyvale GUI", suffix = 3, clone_port = 13004, proto = "https" },
+    # FS HTTPS accesses (reverse proxy): must be PUBLIC in the image, see README
+    { name = "fadc-gui", label = "FAD-Cannes GUI", suffix = 1, clone_port = 13002, proto = "https", path = "/ui/" },
+    { name = "fads-gui", label = "FAD-Sunnyvale GUI", suffix = 3, clone_port = 13004, proto = "https", path = "/ui/" },
     { name = "fgt-gui", label = "Internet FortiGate GUI", suffix = 5, clone_port = 13006, proto = "https" },
   ]
 }
