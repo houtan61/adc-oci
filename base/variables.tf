@@ -47,6 +47,10 @@ variable "builder_ip" {
 variable "admin_cidrs" {
   description = "Instructor source CIDRs allowed to the licence server / builder GUI and SSH"
   type        = list(string)
+  validation {
+    condition     = alltrue([for c in var.admin_cidrs : can(cidrhost(c, 0))])
+    error_message = "Every entry needs a prefix length, e.g. \"203.0.113.10/32\"."
+  }
 }
 
 variable "ssh_public_key" {

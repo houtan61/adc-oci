@@ -39,11 +39,19 @@ variable "student_count" {
 variable "admin_cidrs" {
   description = "Instructor CIDRs: FGT management, portal SSH, FS GUIs, plus everything students get"
   type        = list(string)
+  validation {
+    condition     = alltrue([for c in var.admin_cidrs : can(cidrhost(c, 0))])
+    error_message = "Every entry needs a prefix length, e.g. \"203.0.113.10/32\"."
+  }
 }
 
 variable "student_source_cidrs" {
   description = "Venue CIDRs allowed to the portal and the student ports. [\"0.0.0.0/0\"] opens them to the world."
   type        = list(string)
+  validation {
+    condition     = alltrue([for c in var.student_source_cidrs : can(cidrhost(c, 0))])
+    error_message = "Every entry needs a prefix length, e.g. \"203.0.113.10/32\"."
+  }
 }
 
 # ---------------------------------------------------------------- network (inside the base VCN)
