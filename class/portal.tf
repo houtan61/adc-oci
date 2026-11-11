@@ -26,6 +26,7 @@ locals {
     credentials    = var.lab_credentials
     guide_object   = local.guide_object
     fgt_admin_port = var.fgt_admin_port
+    admin_password = var.portal_admin_password
   }
 }
 
@@ -117,6 +118,7 @@ resource "oci_core_instance" "portal" {
     user_data = base64encode(templatefile("${path.module}/portal-cloudinit.tftpl", {
       par_base     = local.par_base
       guide_object = local.guide_object
+      admin_port   = var.portal_admin_port
     }))
   }
 

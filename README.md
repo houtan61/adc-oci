@@ -128,7 +128,13 @@ Watch progress in a pod's FS GUI (`https://<ddns>:20000/` for s01, `:20020` for 
 free pod, a page with their device links / SSH commands / logins, and the lab guide at `/guide/`.
 Unregistered emails are told to see the instructor.
 
-On the portal VM (`sudo` because the state lives in `/var/lib/adc-portal`):
+**Admin page** `http://<ddns name>:8005/` (`terraform output portal_admin_url`; any user name +
+`portal_admin_password`, reachable from `admin_cidrs` only, plain HTTP): live counts (pods in use / free,
+registered checked in, walk-ins), the pod table with release / disable buttons and FS links, assign / move
+a student, upload the registration CSV (merge or replace; only email + names are kept), add walk-ins, the
+"registered but not checked in yet" list and a CSV export. It refreshes every 15 s.
+
+The same from the CLI on the portal VM (`sudo` because the state lives in `/var/lib/adc-portal`):
 
 ```bash
 sudo adc-portal list                                 # who has which pod

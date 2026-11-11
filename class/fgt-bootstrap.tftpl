@@ -57,6 +57,14 @@ config firewall vip
         set mappedip "${portal_ip}"
         set mappedport 8080
     next
+    edit "portal-admin"
+        set extip ${fgt_ip}
+        set extintf "port1"
+        set portforward enable
+        set extport ${portal_admin_port}
+        set mappedip "${portal_ip}"
+        set mappedport ${portal_admin_port}
+    next
     edit "portal-ssh"
         set extip ${fgt_ip}
         set extintf "port1"
@@ -83,7 +91,7 @@ config firewall vipgrp
     next
     edit "vips-admin"
         set interface "port1"
-        set member "portal-ssh"%{ for v in vips }%{ if v.admin_only } "${v.name}"%{ endif }%{ endfor }
+        set member "portal-ssh" "portal-admin"%{ for v in vips }%{ if v.admin_only } "${v.name}"%{ endif }%{ endfor }
     next
 end
 config firewall policy

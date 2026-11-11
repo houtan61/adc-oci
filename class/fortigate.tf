@@ -32,17 +32,18 @@ resource "oci_core_instance" "fgt" {
 
   metadata = {
     user_data = base64encode(templatefile("${path.module}/fgt-bootstrap.tftpl", {
-      hostname        = local.hostname
-      admin_port      = var.fgt_admin_port
-      admin_cidrs     = var.admin_cidrs
-      student_cidrs   = var.student_source_cidrs
-      inside_cidr     = var.inside_subnet_cidr
-      fgt_ip          = var.fgt_ip
-      portal_ip       = var.portal_ip
-      portal_ssh_port = var.portal_ssh_port
-      vips            = local.vips
-      ddns_hostname   = var.fgt_ddns_hostname
-      license_token   = var.fgt_license_token
+      hostname          = local.hostname
+      admin_port        = var.fgt_admin_port
+      admin_cidrs       = var.admin_cidrs
+      student_cidrs     = var.student_source_cidrs
+      inside_cidr       = var.inside_subnet_cidr
+      fgt_ip            = var.fgt_ip
+      portal_ip         = var.portal_ip
+      portal_ssh_port   = var.portal_ssh_port
+      portal_admin_port = var.portal_admin_port
+      vips              = local.vips
+      ddns_hostname     = var.fgt_ddns_hostname
+      license_token     = var.fgt_license_token
     }))
   }
 

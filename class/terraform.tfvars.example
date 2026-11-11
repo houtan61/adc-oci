@@ -21,7 +21,8 @@ pod_memory_gb    = 32
 # capacity_reservation_id = "ocid1.capacityreservation.oc1...."
 
 # Portal
-portal_passphrase = "change-me"
+portal_passphrase     = "change-me"
+portal_admin_password = "change-me-too" # admin page http://<ddns>:8005/ (your admin_cidrs only)
 roster_csv        = "" # e.g. "roster.csv" (Email, First Name, Last Name columns); git-ignored
 ssh_public_key    = "ssh-rsa AAAA... you@laptop"
 

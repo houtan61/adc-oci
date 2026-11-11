@@ -4,7 +4,8 @@
 Students check in with the class passphrase and their registration email,
 get the next free pod and see their ports, logins and the lab guide.
 
-  adc-portal serve [--port 8080]          run the web portal (systemd does this)
+  adc-portal serve [--port 8080] [--admin-port 8005]
+                                          run the portal (+ admin page if admin_password is set)
   adc-portal list                         who has which pod
   adc-portal release POD|EMAIL            free a pod
   adc-portal assign EMAIL POD [--first F --last L]
@@ -17,7 +18,11 @@ No roster = open check-in (passphrase + name + email).
 """
 
 import argparse
+import base64
 import csv
+import email
+import email.policy
+import io
 import fcntl
 import hashlib
 import hmac
@@ -27,6 +32,7 @@ import mimetypes
 import os
 import secrets
 import sys
+import threading
 import time
 import urllib.parse
 from contextlib import contextmanager
@@ -360,6 +366,264 @@ class Handler(BaseHTTPRequestHandler):
         self._redirect("/", f"{COOKIE}={sign(email)}; Max-Age=1209600; Path=/; HttpOnly; SameSite=Lax")
 
 
+
+# ---------------------------------------------------------------- shared admin actions (CLI + admin page)
+
+def release(target):
+    with locked():
+        st = load_state()
+        key = norm_email(target) if "@" in target else target.strip()
+        pod = pod_of(st, key) if "@" in key else key
+        if pod in st["pods"]:
+            who = st["pods"][pod]["email"]
+            del st["pods"][pod]
+            _write(STATE, st)
+            return f"released {pod} ({who})"
+        return "nothing to release"
+
+
+def set_disabled(pod, on):
+    with locked():
+        st = load_state()
+        if on and pod not in st["disabled"]:
+            st["disabled"].append(pod)
+        if not on and pod in st["disabled"]:
+            st["disabled"].remove(pod)
+        _write(STATE, st)
+    return ("disabled " if on else "enabled ") + pod
+
+
+def _pick(row, *names):
+    low = {k.strip().lower(): v for k, v in row.items() if k}
+    for n in names:
+        if n in low and low[n]:
+            return low[n].strip()
+    return ""
+
+
+def roster_from_csv(text):
+    """Keep only Email / First Name / Last Name from a registration export."""
+    out = {}
+    for r in csv.DictReader(io.StringIO(text.lstrip("\ufeff"))):
+        e = norm_email(_pick(r, "email", "email address", "e-mail"))
+        if e and "@" in e:
+            out[e] = {"email": e, "first": _pick(r, "first name", "first_name", "firstname", "given name"),
+                      "last": _pick(r, "last name", "last_name", "lastname", "surname", "family name")}
+    return list(out.values())
+
+
+def roster_update(cfg, new=None, replace=False, remove=None, clear=False):
+    with locked():
+        roster = [] if (replace or clear) else load_roster(cfg)
+        merged = {r["email"]: r for r in roster}
+        for r in new or []:
+            merged[r["email"]] = r
+        if remove:
+            merged.pop(norm_email(remove), None)
+        roster = list(merged.values())
+        _write(ROSTER, roster)
+        return roster
+
+
+def stats(cfg):
+    st = load_state()
+    roster = load_roster(cfg)
+    reg = {r["email"] for r in roster}
+    taken = {a["email"] for a in st["pods"].values()}
+    ids = [p["id"] for p in cfg["pods"]]
+    free = [p for p in ids if p not in st["pods"] and p not in st["disabled"]]
+    return {
+        "pods": len(ids), "assigned": len(st["pods"]), "free": len(free), "disabled": len(st["disabled"]),
+        "registered": len(roster), "checked_in": len(reg & taken), "walk_ins": len(taken - reg) if roster else 0,
+        "waiting": sorted((r for r in roster if r["email"] not in taken), key=lambda r: (r["last"], r["first"])),
+    }
+
+
+def export_csv():
+    st = load_state()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["pod", "email", "first", "last", "time"])
+    for pid, x in sorted(st["pods"].items()):
+        w.writerow([pid, x["email"], x["first"], x["last"], x["time"]])
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------- admin page
+
+class AdminHandler(Handler):
+    server_version = "adc-portal-admin"
+
+    def _auth(self):
+        pw = load_config().get("admin_password") or ""
+        h = self.headers.get("Authorization", "")
+        if pw and h.startswith("Basic "):
+            try:
+                user, _, given = base64.b64decode(h[6:]).decode().partition(":")
+            except Exception:
+                given = ""
+            if hmac.compare_digest(given.encode(), pw.encode()):
+                return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="adc-portal admin"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return False
+
+    def do_GET(self):
+        if not self._auth():
+            return
+        cfg = load_config()
+        u = urllib.parse.urlparse(self.path)
+        if u.path == "/export.csv":
+            return self._send(200, export_csv(), "text/csv; charset=utf-8",
+                              {"Content-Disposition": "attachment; filename=checkins.csv"})
+        if u.path == "/api/stats":
+            return self._send(200, json.dumps(stats(cfg)), "application/json")
+        if u.path != "/":
+            return self._send(404, "not found", "text/plain")
+        msg = urllib.parse.parse_qs(u.query).get("msg", [""])[0]
+        self._send(200, admin_page(cfg, msg))
+
+    def do_POST(self):
+        if not self._auth():
+            return
+        cfg = load_config()
+        path = urllib.parse.urlparse(self.path).path
+        length = min(int(self.headers.get("Content-Length") or 0), 5_000_000)
+        body = self.rfile.read(length)
+        ctype = self.headers.get("Content-Type", "")
+        if ctype.startswith("multipart/form-data"):
+            msg_ = email.message_from_bytes(b"Content-Type: " + ctype.encode() + b"\r\n\r\n" + body,
+                                            policy=email.policy.HTTP)
+            f, files = {}, {}
+            for part in msg_.iter_parts():
+                name = part.get_param("name", header="content-disposition")
+                data = part.get_payload(decode=True) or b""
+                if part.get_filename():
+                    files[name] = data
+                else:
+                    f[name] = data.decode(errors="replace")
+        else:
+            f = {k: v[0] for k, v in urllib.parse.parse_qs(body.decode(errors="replace")).items()}
+            files = {}
+        try:
+            out = admin_action(cfg, path, f, files)
+        except SystemExit as e:
+            out = str(e)
+        except Exception as e:  # keep the page alive on bad input
+            out = f"error: {e}"
+        self._redirect("/?msg=" + urllib.parse.quote(out))
+
+
+def admin_action(cfg, path, f, files):
+    if path == "/roster/upload":
+        data = files.get("file") or b""
+        rows = roster_from_csv(data.decode("utf-8", errors="replace"))
+        if not rows:
+            return "no rows with an Email column found"
+        roster = roster_update(cfg, rows, replace=f.get("mode") == "replace")
+        return f"loaded {len(rows)} from the CSV, roster now {len(roster)} (only email + names kept)"
+    if path == "/roster/add":
+        e = norm_email(f.get("email"))
+        if "@" not in e:
+            return "need an email"
+        roster_update(cfg, [{"email": e, "first": f.get("first", "").strip(), "last": f.get("last", "").strip()}])
+        return f"added {e}"
+    if path == "/roster/remove":
+        roster_update(cfg, remove=f.get("email"))
+        return f"removed {f.get('email')}"
+    if path == "/roster/clear":
+        roster_update(cfg, clear=True)
+        return "roster cleared: check-in is open (passphrase + name + email)"
+    if path == "/release":
+        return release(f.get("target", ""))
+    if path == "/assign":
+        e = norm_email(f.get("email"))
+        rec = next((r for r in load_roster(cfg) if r["email"] == e), {})
+        pod = assign(cfg, e, f.get("first") or rec.get("first", ""), f.get("last") or rec.get("last", ""),
+                     f.get("pod") or None)
+        return f"{e} -> {pod}" if pod else "no free pod"
+    if path in ("/disable", "/enable"):
+        return set_disabled(f.get("pod", ""), path == "/disable")
+    return "unknown action"
+
+
+ADMIN_CSS = CSS + """
+main{max-width:1100px} .stats{display:flex;gap:14px;flex-wrap:wrap}
+.stat{background:#fff;border-radius:10px;padding:14px 20px;box-shadow:0 1px 3px rgba(0,0,0,.08);min-width:120px}
+.stat b{display:block;font-size:28px;color:#da291c} .stat span{font-size:13px;color:#666}
+form.inline{display:inline;margin:0} form.inline button{margin:0;padding:4px 10px;font-size:12px}
+.row{display:flex;gap:8px;align-items:end;flex-wrap:wrap} .row input{width:auto} .row button{margin-top:0}
+.msg{background:#e8f4ea;color:#1e5b2a;padding:10px 14px;border-radius:6px;margin-bottom:16px}
+.off{color:#999}
+"""
+
+
+def _btn(action, label, **fields):
+    hidden = "".join(f"<input type='hidden' name='{k}' value='{html.escape(str(v))}'>" for k, v in fields.items())
+    return f"<form class='inline' method='post' action='{action}'>{hidden}<button>{label}</button></form>"
+
+
+def admin_page(cfg, msg=""):
+    st = load_state()
+    s = stats(cfg)
+    host = cfg["public_host"]
+    rows = []
+    for p in cfg["pods"]:
+        pid = p["id"]
+        a = st["pods"].get(pid)
+        dis = pid in st["disabled"]
+        fs = f"https://{host}:{p['port_start'] + cfg.get('fs_gui_suffix', 0)}/"
+        who = (f"{html.escape(a['first'])} {html.escape(a['last'])}</td><td>{html.escape(a['email'])}</td>"
+               f"<td>{html.escape(a['time'][11:16])}") if a else "<span class='off'>free</span></td><td></td><td>"
+        acts = (_btn("/release", "release", target=pid) if a else "") + (
+            _btn("/enable", "enable", pod=pid) if dis else _btn("/disable", "disable", pod=pid))
+        rows.append(f"<tr{' class=off' if dis else ''}><td><b>{pid}</b>{' (disabled)' if dis else ''}</td>"
+                    f"<td>{who}</td><td><a href='{fs}' target='_blank'>FS</a></td><td>{acts}</td></tr>")
+    waiting = "".join(f"<tr><td>{html.escape(r['first'])} {html.escape(r['last'])}</td><td>{html.escape(r['email'])}</td>"
+                      f"<td>{_btn('/roster/remove', 'remove', email=r['email'])}</td></tr>" for r in s["waiting"])
+    mode = "roster (registered emails only)" if s["registered"] else "open check-in (no roster)"
+    note = f"<div class='msg'>{html.escape(msg)}</div>" if msg else ""
+    title = html.escape(cfg.get("class_name", "Lab")) + " — admin"
+    return f"""<!doctype html><html><head><meta charset='utf-8'><title>{title}</title>
+<meta http-equiv='refresh' content='15'><style>{ADMIN_CSS}</style></head><body><header>{title}</header><main>
+{note}
+<div class='stats'>
+<div class='stat'><b>{s['assigned']}/{s['pods']}</b><span>pods in use</span></div>
+<div class='stat'><b>{s['free']}</b><span>pods free</span></div>
+<div class='stat'><b>{s['checked_in']}/{s['registered']}</b><span>registered checked in</span></div>
+<div class='stat'><b>{s['walk_ins']}</b><span>not on roster</span></div>
+<div class='stat'><b>{s['disabled']}</b><span>pods disabled</span></div>
+</div>
+<p class='muted'>Check-in mode: {mode}. Student portal: <a href='http://{host}/' target='_blank'>http://{host}/</a> · refreshes every 15 s</p>
+
+<div class='card'><h2>Pods</h2><table><tr><th>Pod</th><th>Name</th><th>Email</th><th>Time</th><th></th><th></th></tr>{''.join(rows)}</table>
+<p><a href='/export.csv'>Download check-ins (CSV)</a></p></div>
+
+<div class='card'><h2>Assign / move a student</h2>
+<form method='post' action='/assign' class='row'>
+<input name='email' placeholder='email' required><input name='pod' placeholder='pod (s05), empty = next free' size='24'>
+<input name='first' placeholder='first (if not on roster)'><input name='last' placeholder='last'>
+<button>Assign</button></form>
+<p class='muted'>Their previous pod is freed. A reused pod keeps the previous student's device config.</p></div>
+
+<div class='card'><h2>Roster</h2>
+<form method='post' action='/roster/upload' enctype='multipart/form-data' class='row'>
+<input type='file' name='file' accept='.csv,text/csv' required>
+<label style='margin:0'><input type='radio' name='mode' value='merge' checked style='width:auto'> merge</label>
+<label style='margin:0'><input type='radio' name='mode' value='replace' style='width:auto'> replace</label>
+<button>Upload CSV</button></form>
+<p class='muted'>Registration export with Email / First Name / Last Name columns; everything else in the file is dropped.</p>
+<form method='post' action='/roster/add' class='row'>
+<input name='email' placeholder='walk-in email' required><input name='first' placeholder='first'><input name='last' placeholder='last'>
+<button>Add</button></form>
+<h2 style='margin-top:22px'>Registered, not checked in yet ({len(s['waiting'])})</h2>
+<table>{waiting or "<tr><td class='muted'>nobody</td></tr>"}</table>
+{_btn('/roster/clear', 'Clear roster (open check-in)') if s['registered'] else ''}
+</div>
+</main></body></html>"""
+
 # ---------------------------------------------------------------- CLI
 
 def cmd_list(cfg, _a):
@@ -373,16 +637,7 @@ def cmd_list(cfg, _a):
 
 
 def cmd_release(cfg, a):
-    with locked():
-        st = load_state()
-        key = norm_email(a.target) if "@" in a.target else a.target
-        pod = pod_of(st, key) if "@" in key else key
-        if pod in st["pods"]:
-            print(f"released {pod} ({st['pods'][pod]['email']})")
-            del st["pods"][pod]
-            _write(STATE, st)
-        else:
-            print("nothing to release")
+    print(release(a.target))
 
 
 def cmd_assign(cfg, a):
@@ -394,46 +649,21 @@ def cmd_assign(cfg, a):
 
 
 def cmd_disable(cfg, a, on=True):
-    with locked():
-        st = load_state()
-        if on and a.pod not in st["disabled"]:
-            st["disabled"].append(a.pod)
-        if not on and a.pod in st["disabled"]:
-            st["disabled"].remove(a.pod)
-        _write(STATE, st)
-    print(("disabled " if on else "enabled ") + a.pod)
+    print(set_disabled(a.pod, on))
 
 
 def cmd_export(cfg, _a):
-    st = load_state()
-    w = csv.writer(sys.stdout)
-    w.writerow(["pod", "email", "first", "last", "time"])
-    for pid, x in sorted(st["pods"].items()):
-        w.writerow([pid, x["email"], x["first"], x["last"], x["time"]])
-
-
-def _pick(row, *names):
-    low = {k.strip().lower(): v for k, v in row.items() if k}
-    for n in names:
-        if n in low and low[n]:
-            return low[n].strip()
-    return ""
+    sys.stdout.write(export_csv())
 
 
 def cmd_roster(cfg, a):
     with locked():
         roster = load_roster(cfg)
         if a.action == "import":
-            with open(a.args[0], newline="", encoding="utf-8-sig") as fh:
-                rows = list(csv.DictReader(fh))
-            new = {}
-            for r in rows:
-                e = norm_email(_pick(r, "email", "email address"))
-                if e:
-                    new[e] = {"email": e, "first": _pick(r, "first name", "first_name", "firstname"),
-                              "last": _pick(r, "last name", "last_name", "lastname")}
+            with open(a.args[0], encoding="utf-8-sig") as fh:
+                new = roster_from_csv(fh.read())
             merged = {r["email"]: r for r in roster}
-            merged.update(new)
+            merged.update({r["email"]: r for r in new})
             roster = list(merged.values())
             print(f"imported {len(new)}, roster now {len(roster)}")
         elif a.action == "add":
@@ -461,6 +691,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("serve"); s.add_argument("--port", type=int, default=8080)
+    s.add_argument("--admin-port", type=int, default=8005)
     sub.add_parser("list")
     s = sub.add_parser("release"); s.add_argument("target")
     s = sub.add_parser("assign"); s.add_argument("email"); s.add_argument("pod")
@@ -477,6 +708,10 @@ def main():
         secret_key()
         load_roster(cfg)
         print(f"adc-portal on :{a.port}, {len(cfg['pods'])} pods", flush=True)
+        if cfg.get("admin_password"):
+            adm = ThreadingHTTPServer(("0.0.0.0", a.admin_port), AdminHandler)
+            threading.Thread(target=adm.serve_forever, daemon=True).start()
+            print(f"admin page on :{a.admin_port}", flush=True)
         ThreadingHTTPServer(("0.0.0.0", a.port), Handler).serve_forever()
     elif a.cmd == "list":
         cmd_list(cfg, a)

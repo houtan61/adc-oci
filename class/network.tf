@@ -66,7 +66,7 @@ resource "oci_core_security_list" "public" {
 
   # Instructor: FortiGate GUI/SSH and SSH to the portal
   dynamic "ingress_security_rules" {
-    for_each = { for p in setproduct(var.admin_cidrs, [22, var.fgt_admin_port, var.portal_ssh_port]) : "${p[0]}-${p[1]}" => p }
+    for_each = { for p in setproduct(var.admin_cidrs, [22, var.fgt_admin_port, var.portal_ssh_port, var.portal_admin_port]) : "${p[0]}-${p[1]}" => p }
     content {
       source   = ingress_security_rules.value[0]
       protocol = "6"

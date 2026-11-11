@@ -272,6 +272,19 @@ variable "lab_credentials" {
   ]
 }
 
+variable "portal_admin_port" {
+  description = "Admin page (roster upload, live check-in stats, assign/release pods): instructor CIDRs only, same port on the FGT and the portal VM"
+  type        = number
+  default     = 8005
+}
+
+variable "portal_admin_password" {
+  description = "Password for the admin page (any user name). Empty = admin page off."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "portal_ssh_port" {
   description = "External port on the FortiGate for SSH to the portal VM (instructor only)"
   type        = number

@@ -15,6 +15,10 @@ output "portal_url" {
   value = "http://${local.public_host}/"
 }
 
+output "portal_admin_url" {
+  value = var.portal_admin_password == "" ? "admin page off (set portal_admin_password)" : "http://${local.public_host}:${var.portal_admin_port}/"
+}
+
 output "portal_ssh" {
   value = "ssh -p ${var.portal_ssh_port} ubuntu@${local.public_host}"
 }

@@ -38,7 +38,7 @@ write_files:
       Wants=network-online.target
 
       [Service]
-      ExecStart=/usr/bin/python3 /opt/adc-portal/adc_portal.py serve --port 8080
+      ExecStart=/usr/bin/python3 /opt/adc-portal/adc_portal.py serve --port 8080 --admin-port ${admin_port}
       Restart=always
       RestartSec=3
 
@@ -49,6 +49,7 @@ runcmd:
   - mkdir -p /opt/adc-portal /var/lib/adc-portal
   # OCI Ubuntu images reject everything but SSH in iptables
   - iptables -I INPUT -p tcp --dport 8080 -j ACCEPT
+  - iptables -I INPUT -p tcp --dport ${admin_port} -j ACCEPT
   - netfilter-persistent save || true
   - /opt/adc-portal/fetch.sh
   - systemctl daemon-reload
