@@ -28,6 +28,7 @@ import hashlib
 import hmac
 import html
 import json
+import re
 import mimetypes
 import os
 import secrets
@@ -53,6 +54,9 @@ SECRET = DATA_DIR / "secret"
 LOCK = DATA_DIR / ".lock"
 HEALTH = DATA_DIR / "health.json"
 POWER_LOG = DATA_DIR / "power-on.log"
+LICENSES = DATA_DIR / "licenses.json"
+LICENSE_LOG = DATA_DIR / "license-generate.log"
+LICENSE_EVERY = 300
 HEALTH_EVERY = 60
 COOKIE = "adclab"
 
@@ -512,6 +516,134 @@ def power_on(cfg, pods=None, action="install"):
         _power_proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
     return f"{action} started on {' '.join(pods) if pods else 'all pods'}: FS queues it; the nested VMs take ~10 min"
 
+
+# ---------------------------------------------------------------- licence server (FS FortiFlex pool)
+
+_lic_lock = threading.Lock()
+_lic_thread = None
+LIC_RE = re.compile(r"^\s*(\d+)\s+([A-Za-z0-9_]+):(\S+)")
+
+
+def fs_cli(ip, password, command, timeout=90):
+    """Run one FS CLI command over SSH (admin + password). Returns (ok, output)."""
+    try:
+        r = subprocess.run(
+            ["sshpass", "-e", "ssh", "-n", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+             "-o", "ConnectTimeout=10", "-o", "LogLevel=ERROR", f"admin@{ip}", command],
+            env=dict(os.environ, SSHPASS=password), capture_output=True, text=True, timeout=timeout)
+        return r.returncode == 0, (r.stdout + r.stderr).strip()
+    except FileNotFoundError:
+        return False, "sshpass is not installed: sudo apt-get install -y sshpass"
+    except subprocess.TimeoutExpired:
+        return False, f"timed out after {timeout} s"
+
+
+def license_refresh(cfg):
+    ls = cfg.get("license_server") or {}
+    if not (ls.get("ip") and cfg.get("fs_password")):
+        return None
+    with _lic_lock:
+        ok, out = fs_cli(ls["ip"], cfg["fs_password"], "system license list")
+        res = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "ok": ok, "error": "" if ok else out[-300:],
+               "items": []}
+        if ok:
+            for line in out.splitlines():
+                m = LIC_RE.match(line)
+                if m:
+                    res["items"].append({"id": int(m.group(1)), "type": m.group(2).upper(), "serial": m.group(3)})
+        _write(LICENSES, res)
+        return res
+
+
+def license_loop():
+    while True:
+        try:
+            license_refresh(load_config())
+        except Exception as e:
+            sys.stderr.write(f"licence refresh failed: {e}\n")
+        time.sleep(LICENSE_EVERY)
+
+
+def license_generate(cfg, ltype, count):
+    global _lic_thread
+    ls = cfg.get("license_server") or {}
+    types = [t.upper() for t in (cfg.get("license_types") or ["FAD", "FGT"])]
+    ltype = (ltype or "").upper()
+    if ltype not in types:
+        return f"pool type must be one of {', '.join(types)}"
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        return "count must be a number"
+    if not 1 <= count <= 200:
+        return "count must be 1-200"
+    if not (ls.get("ip") and cfg.get("fs_password")):
+        return "no licence server / fs_admin_password in the config"
+    if _lic_thread is not None and _lic_thread.is_alive():
+        return "a generate run is still going; check its output below"
+    cmd = f"system license flex pool generate {ltype} {count}"
+
+    def run():
+        with open(LICENSE_LOG, "w") as log:
+            log.write(f"{time.strftime('%H:%M:%S')} {cmd}\n")
+            log.flush()
+            ok, out = fs_cli(ls["ip"], cfg["fs_password"], cmd, timeout=600)
+            log.write(out + "\n" + (f"{time.strftime('%H:%M:%S')} done\n" if ok else "FAILED\n"))
+        license_refresh(cfg)
+
+    _lic_thread = threading.Thread(target=run, daemon=True)
+    _lic_thread.start()
+    return f"started: {cmd} (the list refreshes when it finishes)"
+
+
+def license_html(cfg):
+    ls = cfg.get("license_server") or {}
+    if not ls.get("ip"):
+        return ""
+    if not cfg.get("fs_password"):
+        return ("<div class='card'><h2>Licence pool</h2><p class='muted'>Set fs_admin_password in tfvars "
+                "(same as the licence server's FS admin password).</p></div>")
+    lic = _read(LICENSES, None)
+    needs = {k.upper(): v for k, v in (cfg.get("license_needs") or {}).items()}
+    npods = len(cfg["pods"])
+    types = [t.upper() for t in (cfg.get("license_types") or ["FAD", "FGT"])]
+    form = (f"<form method='post' action='/license/generate' class='row'>"
+            f"<select name='type' style='padding:9px;border-radius:6px;border:1px solid #ccc'>"
+            + "".join(f"<option>{t}</option>" for t in types) +
+            f"</select><input name='count' type='number' min='1' max='200' value='{max(needs.values() or [1]) * npods}' style='width:110px'>"
+            f"<button>Generate</button></form>")
+    refresh = _btn("/license/refresh", "Refresh list")
+    if not lic:
+        return f"<div class='card'><h2>Licence pool</h2><p class='muted'>first read running…</p>{refresh}{form}</div>"
+    if not lic["ok"]:
+        body = f"<div class='err'>Couldn't read the licence server ({html.escape(ls['ip'])}): {html.escape(lic['error'])}</div>"
+    else:
+        counts = {}
+        for it in lic["items"]:
+            counts[it["type"]] = counts.get(it["type"], 0) + 1
+        tiles = []
+        for t in sorted(set(counts) | set(needs)):
+            have, need = counts.get(t, 0), needs.get(t, 0) * npods
+            ok = have >= need
+            colour = "#1e7b34" if ok else "#b3261e"
+            hint = f"need {need} for {npods} pods ({needs.get(t, 0)} each)" if t in needs else "not used by the pods"
+            tiles.append(f"<div class='stat'><b style='color:{colour}'>{have}</b><span>{t} in pool · {hint}"
+                         f"{'' if ok else ' · <b>short by ' + str(need - have) + '</b>'}</span></div>")
+        serials = "".join(f"<tr><td>{it['id']}</td><td>{it['type']}</td><td><code>{html.escape(it['serial'])}</code></td></tr>"
+                          for it in sorted(lic["items"], key=lambda x: (x["type"], x["id"])))
+        body = (f"<div class='stats'>{''.join(tiles)}</div>"
+                f"<details style='margin-top:12px'><summary>{len(lic['items'])} licences</summary>"
+                f"<table><tr><th>#</th><th>Type</th><th>Serial</th></tr>{serials}</table></details>")
+    log = ""
+    if LICENSE_LOG.exists():
+        tail = LICENSE_LOG.read_text(errors="replace").splitlines()[-20:]
+        log = f"<h2 style='margin-top:18px'>Last generate run</h2><pre>{html.escape(chr(10).join(tail))}</pre>"
+    return (f"<div class='card'><h2>Licence pool</h2><p class='muted'>Licence server {html.escape(ls['ip'])} · "
+            f"<code>system license list</code> · read {lic['time'][11:]} (every {LICENSE_EVERY // 60} min) {refresh}</p>"
+            f"{body}<h2 style='margin-top:18px'>Generate licences</h2>{form}"
+            f"<p class='muted'>Runs <code>system license flex pool generate TYPE COUNT</code> on the licence server "
+            f"(uses FortiFlex points). Stop them after the class: <code>system license flex license stop all --force</code>.</p>{log}</div>")
+
 # ---------------------------------------------------------------- admin page
 
 class AdminHandler(Handler):
@@ -614,6 +746,11 @@ def admin_action(cfg, path, f, files):
     if path == "/power-on":
         pod = f.get("pod")
         return power_on(cfg, [pod] if pod else None, f.get("action") or "install")
+    if path == "/license/refresh":
+        r = license_refresh(cfg)
+        return "licence list refreshed" if r and r["ok"] else "couldn't read the licence server (see the card)"
+    if path == "/license/generate":
+        return license_generate(cfg, f.get("type"), f.get("count"))
     if path in ("/disable", "/enable"):
         return set_disabled(f.get("pod", ""), path == "/disable")
     return "unknown action"
@@ -687,6 +824,7 @@ def admin_page(cfg, msg=""):
     mode = "roster (registered emails only)" if s["registered"] else "open check-in (no roster)"
     note = f"<div class='msg'>{html.escape(msg)}</div>" if msg else ""
     health_card = health_html(cfg)
+    license_card = license_html(cfg)
     title = html.escape(cfg.get("class_name", "Lab")) + " — admin"
     return f"""<!doctype html><html><head><meta charset='utf-8'><title>{title}</title>
 <meta http-equiv='refresh' content='15'><style>{ADMIN_CSS}</style></head><body><header>{title}</header><main>
@@ -701,6 +839,8 @@ def admin_page(cfg, msg=""):
 <p class='muted'>Check-in mode: {mode}. Student portal: <a href='http://{host}/' target='_blank'>http://{host}/</a> · refreshes every 15 s</p>
 
 {health_card}
+
+{license_card}
 
 <div class='card'><h2>Pods</h2><table><tr><th>Pod</th><th>Name</th><th>Email</th><th>Time</th><th></th><th></th></tr>{''.join(rows)}</table>
 <p><a href='/export.csv'>Download check-ins (CSV)</a></p></div>
@@ -816,6 +956,7 @@ def main():
             adm = ThreadingHTTPServer(("0.0.0.0", a.admin_port), AdminHandler)
             threading.Thread(target=adm.serve_forever, daemon=True).start()
             threading.Thread(target=health_loop, daemon=True).start()
+            threading.Thread(target=license_loop, daemon=True).start()
             print(f"admin page on :{a.admin_port}", flush=True)
         ThreadingHTTPServer(("0.0.0.0", a.port), Handler).serve_forever()
     elif a.cmd == "list":

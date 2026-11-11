@@ -300,6 +300,15 @@ variable "fs_admin_password" {
   default     = ""
 }
 
+variable "license_per_pod" {
+  description = "Licences each pod takes from the licence server pool, per FortiFlex pool type (admin page compares the pool with pods x this). The topology has FAD-Cannes(+node2), FAD-Sunnyvale(+node2) and the internet FGT."
+  type        = map(number)
+  default = {
+    FAD = 4
+    FGT = 1
+  }
+}
+
 variable "fabric_id" {
   description = "Fabric ID in the class image (FS CLI: runtime fabric detail)"
   type        = number

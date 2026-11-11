@@ -139,6 +139,11 @@ the 13xxx device GUIs) and shows a pod × port grid, with **Check now**, **Power
 **power on** button next to any pod with ports down (`runtime fabric install <fabric_id>`, output shown on the
 page). The power-on buttons need `fs_admin_password` in tfvars; `pods-power-on` on the VM uses it too.
 
+**Licence pool** on the same page: reads `system license list` on the licence server (10.20.3.10, same FS admin
+password) every 5 min or on **Refresh list**, shows each pool type (FAD, FGT) against pods × `license_per_pod`
+(green = enough, red = short by N), the serial list, and a **Generate** form (type drop-down + count) that runs
+`system license flex pool generate TYPE COUNT` and shows its output.
+
 The same from the CLI on the portal VM (`sudo` because the state lives in `/var/lib/adc-portal`):
 
 ```bash

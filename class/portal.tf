@@ -29,6 +29,9 @@ locals {
     admin_password = var.portal_admin_password
     fs_password    = var.fs_admin_password
     fabric_id      = var.fabric_id
+    license_server = { ip = local.base.license_server_ip }
+    license_needs  = var.license_per_pod
+    license_types  = keys(var.license_per_pod)
   }
 }
 
