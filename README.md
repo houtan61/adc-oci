@@ -164,6 +164,12 @@ The portal VM pulls its files at boot from the class bucket through a read-only 
 `par_valid_hours` (72 h). After changing the guide or portal settings in Terraform and applying, run
 `sudo /opt/adc-portal/fetch.sh` on the portal within that window (or the VM is replaced).
 
+### Admin access
+`admin_cidrs` is enforced on the front FortiGate: `trusthost1..N` on the `admin` account (GUI 8443, SSH 22) and
+policy `admin-in` (source group `src-admin`) for the portal SSH (2222) and admin page (8005) VIPs. With
+`admin_ports_open = true` (default) the OCI security list leaves those ports open, so to add an admin IP during a
+class just change the FortiGate: add a trusthost on `admin` and an address to `src-admin`.
+
 ### Let another source IP in during the class (no Terraform)
 OCI console → VCN `adclab-vcn` → security list `adclab-sl-public` → add ingress for `<ip>/32`, TCP 80 and
 the student port range; then on the FortiGate add an address to the `src-students` group. A later

@@ -64,9 +64,11 @@ resource "oci_core_security_list" "public" {
     }
   }
 
-  # Instructor: FortiGate GUI/SSH and SSH to the portal
+  # Instructor ports: FortiGate GUI/SSH, portal SSH, admin page.
+  # admin_ports_open = true: open to the world here and enforced on the FortiGate instead
+  # (admin trusthosts for 22/8443, policy admin-in / src-admin for the 2222 and 8005 VIPs).
   dynamic "ingress_security_rules" {
-    for_each = { for p in setproduct(var.admin_cidrs, [22, var.fgt_admin_port, var.portal_ssh_port, var.portal_admin_port]) : "${p[0]}-${p[1]}" => p }
+    for_each = { for p in setproduct(var.admin_ports_open ? ["0.0.0.0/0"] : var.admin_cidrs, [22, var.fgt_admin_port, var.portal_ssh_port, var.portal_admin_port]) : "${p[0]}-${p[1]}" => p }
     content {
       source   = ingress_security_rules.value[0]
       protocol = "6"

@@ -45,6 +45,12 @@ variable "admin_cidrs" {
   }
 }
 
+variable "admin_ports_open" {
+  description = "true: the OCI security list leaves the admin ports (22, FGT GUI, portal SSH, admin page) open and the FortiGate enforces admin_cidrs (admin trusthosts + policy admin-in). Add an admin IP mid-class on the FGT only. false: also restrict them in OCI."
+  type        = bool
+  default     = true
+}
+
 variable "student_source_cidrs" {
   description = "Venue CIDRs allowed to the portal and the student ports. [\"0.0.0.0/0\"] opens them to the world."
   type        = list(string)
