@@ -67,9 +67,11 @@ resource "oci_objectstorage_preauthrequest" "portal" {
   namespace             = local.ns
   bucket                = oci_objectstorage_bucket.portal.name
   name                  = "portal-boot-read"
-  access_type           = "AnyObjectRead"
-  bucket_listing_action = "Deny"
-  time_expires          = time_offset.par_expiry.rfc3339
+  access_type  = "AnyObjectRead"
+  time_expires = time_offset.par_expiry.rfc3339
+
+  # Listing is denied by default. Setting bucket_listing_action = "Deny" explicitly makes the provider
+  # see a diff on every plan, which replaces the PAR, changes its URL and with it the portal VM.
 }
 
 locals {
@@ -125,7 +127,9 @@ resource "oci_core_instance" "portal" {
   }
 
   lifecycle {
-    ignore_changes = [source_details[0].source_id]
+    # Never rebuild a running portal (it holds check-ins) just because the boot link or image moved.
+    # To push new portal files: apply, then `sudo /opt/adc-portal/fetch.sh` on the VM.
+    ignore_changes = [source_details[0].source_id, metadata["user_data"]]
   }
 
   depends_on = [
