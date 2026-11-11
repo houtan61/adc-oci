@@ -1,0 +1,29 @@
+region           = "ap-sydney-1"
+compartment_ocid = "ocid1.compartment.oc1..xxxx"
+name_prefix      = "adclab"
+
+class_name    = "FortiADC Workshop"
+student_count = 18 # 17 registered + 1 spare
+
+# Who can reach what
+admin_cidrs          = ["203.0.113.10/32"] # you: FGT mgmt, portal SSH, FS GUIs
+student_source_cidrs = ["198.51.100.0/24"] # the venue's public IP(s)
+
+# Front FortiGate
+fgt_listing_version = "7.6.4_(_X64_)"
+fgt_license_token   = "XXXXXXXXXXXXXXXXXXXX" # fresh FortiFlex token, same serial each class
+fgt_ddns_hostname   = "adc-class.fortiddns.com"
+
+# Pods
+class_image_ocid = "ocid1.image.oc1.ap-sydney-1.xxxx" # captured from the base builder
+pod_ocpus        = 4
+pod_memory_gb    = 32
+# capacity_reservation_id = "ocid1.capacityreservation.oc1...."
+
+# Portal
+portal_passphrase = "change-me"
+roster_csv        = "" # e.g. "roster.csv" (Email, First Name, Last Name columns); git-ignored
+ssh_public_key    = "ssh-rsa AAAA... you@laptop"
+
+# Only if the FS port redirections in your image differ from the defaults (see README)
+# services = [ ... ]

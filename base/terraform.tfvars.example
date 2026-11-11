@@ -1,0 +1,16 @@
+region           = "ap-sydney-1"
+compartment_ocid = "ocid1.compartment.oc1..xxxx"
+name_prefix      = "adclab"
+
+# Your public IP(s) - licence server / builder GUI + SSH
+admin_cidrs = ["203.0.113.10/32"]
+
+# Fabric Studio cloud image (official image in the tenancy)
+fs_image_ocid = "ocid1.image.oc1.ap-sydney-1.xxxx"
+
+license_server_enabled = true
+
+# Turn on to build the class image, off again once it's captured
+builder_enabled   = true
+builder_ocpus     = 4
+builder_memory_gb = 32

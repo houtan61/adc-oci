@@ -1,0 +1,15 @@
+# secrets, state, generated output
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+.terraform.lock.hcl
+crash.log
+out/
+# registration exports (names, emails, phones)
+*roster*.csv
+*Rego*.csv
+.DS_Store
+__pycache__/

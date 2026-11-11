@@ -1,0 +1,145 @@
+Content-Type: multipart/mixed; boundary="==ADCLAB=="
+MIME-Version: 1.0
+
+--==ADCLAB==
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="config"
+
+config system global
+    set hostname "${hostname}"
+    set admin-sport ${admin_port}
+    set admintimeout 60
+end
+config system interface
+    edit "port1"
+        set mode dhcp
+        set allowaccess ping https ssh
+    next
+end
+config system admin
+    edit "admin"
+%{ for i, c in admin_cidrs ~}
+        set trusthost${i + 1} ${cidrhost(c, 0)} ${cidrnetmask(c)}
+%{ endfor ~}
+    next
+end
+config firewall address
+%{ for i, c in admin_cidrs ~}
+    edit "admin-${i + 1}"
+        set subnet ${cidrhost(c, 0)} ${cidrnetmask(c)}
+    next
+%{ endfor ~}
+%{ for i, c in student_cidrs ~}
+    edit "student-${i + 1}"
+        set subnet ${cidrhost(c, 0)} ${cidrnetmask(c)}
+    next
+%{ endfor ~}
+    edit "inside-net"
+        set subnet ${cidrhost(inside_cidr, 0)} ${cidrnetmask(inside_cidr)}
+    next
+end
+config firewall addrgrp
+    edit "src-admin"
+        set member%{ for i, c in admin_cidrs } "admin-${i + 1}"%{ endfor }
+    next
+    edit "src-students"
+        set member%{ for i, c in admin_cidrs } "admin-${i + 1}"%{ endfor }%{ for i, c in student_cidrs } "student-${i + 1}"%{ endfor }
+    next
+end
+config firewall vip
+    edit "portal"
+        set extip ${fgt_ip}
+        set extintf "port1"
+        set portforward enable
+        set extport 80
+        set mappedip "${portal_ip}"
+        set mappedport 8080
+    next
+    edit "portal-ssh"
+        set extip ${fgt_ip}
+        set extintf "port1"
+        set portforward enable
+        set extport ${portal_ssh_port}
+        set mappedip "${portal_ip}"
+        set mappedport 22
+    next
+%{ for v in vips ~}
+    edit "${v.name}"
+        set extip ${fgt_ip}
+        set extintf "port1"
+        set portforward enable
+        set extport ${v.ext_port}
+        set mappedip "${v.mapped_ip}"
+        set mappedport ${v.clone_port}
+    next
+%{ endfor ~}
+end
+config firewall vipgrp
+    edit "vips-students"
+        set interface "port1"
+        set member "portal"%{ for v in vips }%{ if !v.admin_only } "${v.name}"%{ endif }%{ endfor }
+    next
+    edit "vips-admin"
+        set interface "port1"
+        set member "portal-ssh"%{ for v in vips }%{ if v.admin_only } "${v.name}"%{ endif }%{ endfor }
+    next
+end
+config firewall policy
+    edit 1
+        set name "students-in"
+        set srcintf "port1"
+        set dstintf "port1"
+        set srcaddr "src-students"
+        set dstaddr "vips-students"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+    next
+    edit 2
+        set name "admin-in"
+        set srcintf "port1"
+        set dstintf "port1"
+        set srcaddr "src-admin"
+        set dstaddr "vips-admin"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+    next
+    edit 3
+        set name "inside-out"
+        set srcintf "port1"
+        set dstintf "port1"
+        set srcaddr "inside-net"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set nat enable
+    next
+end
+%{ if ddns_hostname != "" ~}
+config system ddns
+    edit 1
+        set ddns-server FortiGuardDDNS
+        set ddns-domain "${ddns_hostname}"
+        set use-public-ip enable
+        set monitor-interface "port1"
+    next
+end
+%{ endif ~}
+%{ if license_token != "" ~}
+
+--==ADCLAB==
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="license"
+
+LICENSE-TOKEN:${license_token}
+%{ endif ~}
+
+--==ADCLAB==--

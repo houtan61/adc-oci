@@ -1,0 +1,268 @@
+# ---------------------------------------------------------------- general
+
+variable "region" {
+  type = string
+}
+
+variable "compartment_ocid" {
+  type = string
+}
+
+variable "base_state_path" {
+  description = "Path to the base stack's state file"
+  type        = string
+  default     = "../base/terraform.tfstate"
+}
+
+variable "name_prefix" {
+  type    = string
+  default = "adclab"
+}
+
+variable "class_name" {
+  description = "Shown on the portal; a cleaned-up copy becomes the front FortiGate hostname"
+  type        = string
+  default     = "FortiADC Workshop"
+}
+
+variable "student_count" {
+  description = "Number of pods to build (registered students + a spare or two)"
+  type        = number
+  validation {
+    condition     = var.student_count >= 1 && var.student_count <= 99
+    error_message = "student_count must be 1-99."
+  }
+}
+
+# ---------------------------------------------------------------- access control
+
+variable "admin_cidrs" {
+  description = "Instructor CIDRs: FGT management, portal SSH, FS GUIs, plus everything students get"
+  type        = list(string)
+}
+
+variable "student_source_cidrs" {
+  description = "Venue CIDRs allowed to the portal and the student ports. [\"0.0.0.0/0\"] opens them to the world."
+  type        = list(string)
+}
+
+# ---------------------------------------------------------------- network (inside the base VCN)
+
+variable "public_subnet_cidr" {
+  type    = string
+  default = "10.20.0.0/24"
+}
+
+variable "fgt_ip" {
+  description = "Front FortiGate port1 private IP"
+  type        = string
+  default     = "10.20.0.10"
+}
+
+variable "inside_subnet_cidr" {
+  description = "Pods + portal. Default route points at the FortiGate."
+  type        = string
+  default     = "10.20.1.0/24"
+}
+
+variable "portal_ip" {
+  type    = string
+  default = "10.20.1.10"
+}
+
+variable "pod_ip_offset" {
+  description = "Pod sNN gets host address offset+NN in the inside subnet (s01 = .101)"
+  type        = number
+  default     = 100
+}
+
+# ---------------------------------------------------------------- front FortiGate
+
+variable "fgt_listing_name" {
+  description = "OCI Marketplace listing for the FortiGate image (used when fgt_listing_id is empty)"
+  type        = string
+  default     = "FortiGate Next-Gen Firewall (BYOL)"
+}
+
+variable "fgt_listing_id" {
+  description = "Marketplace listing OCID; leave empty to look it up by name"
+  type        = string
+  default     = ""
+}
+
+variable "fgt_listing_version" {
+  description = "Listing resource version, e.g. \"7.6.4_(_X64_)\""
+  type        = string
+}
+
+variable "fgt_shape" {
+  type    = string
+  default = "VM.Standard.E5.Flex"
+}
+
+variable "fgt_ocpus" {
+  description = "1 OCPU = 2 vCPU; the FortiFlex config's vCPU count must cover it"
+  type        = number
+  default     = 1
+}
+
+variable "fgt_memory_gb" {
+  type    = number
+  default = 8
+}
+
+variable "fgt_license_token" {
+  description = "FortiFlex token for the front FortiGate (single use per VM: new token every build, same serial keeps the DDNS name)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "fgt_ddns_hostname" {
+  description = "FortiGuard DDNS name, e.g. adc-class.fortiddns.com. Empty = no DDNS (students use the public IP)."
+  type        = string
+  default     = ""
+}
+
+variable "fgt_admin_port" {
+  description = "FortiGate HTTPS admin port (keep out of the student port range)"
+  type        = number
+  default     = 8443
+}
+
+# ---------------------------------------------------------------- pods
+
+variable "class_image_ocid" {
+  description = "Custom image captured from the builder (FS with the ADC topology installed + licence server URL)"
+  type        = string
+}
+
+variable "pod_shape" {
+  type    = string
+  default = "VM.Standard.E5.Flex"
+}
+
+variable "pod_ocpus" {
+  type    = number
+  default = 4
+}
+
+variable "pod_memory_gb" {
+  type    = number
+  default = 32
+}
+
+variable "pod_boot_volume_gb" {
+  type    = number
+  default = 200
+}
+
+variable "capacity_reservation_id" {
+  description = "Optional capacity reservation for the pods (shape/OCPU/memory must match exactly)"
+  type        = string
+  default     = null
+}
+
+# ---------------------------------------------------------------- ports
+
+variable "port_base" {
+  description = "First external port. Student N owns port_base + (N-1)*port_block ... + port_block-1."
+  type        = number
+  default     = 20000
+}
+
+variable "port_block" {
+  type    = number
+  default = 20
+}
+
+variable "services" {
+  description = <<-EOT
+    One entry per port in each student's block.
+      suffix     : offset inside the block (external port = block start + suffix)
+      clone_port : port on the pod VM (an FS port redirection, or 443 for the FS GUI itself)
+      proto      : https | ssh | other  (how the portal shows it)
+      user       : login shown on the portal for ssh lines (optional)
+      admin_only : true = instructor CIDRs only, not shown to students
+  EOT
+  type = list(object({
+    name       = string
+    label      = string
+    suffix     = number
+    clone_port = number
+    proto      = string
+    user       = optional(string, "")
+    admin_only = optional(bool, false)
+  }))
+  default = [
+    { name = "fsgui", label = "Fabric Studio GUI", suffix = 0, clone_port = 443, proto = "https", admin_only = true },
+    { name = "fadc-gui", label = "FAD-Cannes GUI", suffix = 1, clone_port = 10001, proto = "https" },
+    { name = "fadc-ssh", label = "FAD-Cannes SSH", suffix = 2, clone_port = 10002, proto = "ssh", user = "admin" },
+    { name = "fads-gui", label = "FAD-Sunnyvale GUI", suffix = 3, clone_port = 10003, proto = "https" },
+    { name = "fads-ssh", label = "FAD-Sunnyvale SSH", suffix = 4, clone_port = 10004, proto = "ssh", user = "admin" },
+    { name = "fgt-gui", label = "Internet FortiGate GUI", suffix = 5, clone_port = 10005, proto = "https" },
+    { name = "fgt-ssh", label = "Internet FortiGate SSH", suffix = 6, clone_port = 10006, proto = "ssh", user = "admin" },
+    { name = "client-ssh", label = "zClient SSH", suffix = 7, clone_port = 10007, proto = "ssh", user = "root" },
+  ]
+}
+
+# ---------------------------------------------------------------- portal
+
+variable "portal_passphrase" {
+  description = "Class passphrase students type at check-in (case and spaces ignored)"
+  type        = string
+  sensitive   = true
+}
+
+variable "roster_csv" {
+  description = "Optional registration export (CSV with Email / First Name / Last Name columns). Empty = open check-in or import later with adc-portal roster import."
+  type        = string
+  default     = ""
+}
+
+variable "guide_zip" {
+  description = "Lab guide zip (one top-level folder with index.html)"
+  type        = string
+  default     = "../guide/fortiadc-global-app-delivery-docs.zip"
+}
+
+variable "lab_credentials" {
+  description = "Shown on the portal's pod page"
+  type = list(object({
+    device   = string
+    user     = string
+    password = string
+  }))
+  default = [
+    { device = "FortiADC (Cannes, Sunnyvale)", user = "admin", password = "Fortinet123!@" },
+    { device = "Internet FortiGate", user = "admin", password = "Fortinet123!@" },
+    { device = "zClient, DNS servers, web servers", user = "root", password = "Fortinet123!@" },
+  ]
+}
+
+variable "portal_ssh_port" {
+  description = "External port on the FortiGate for SSH to the portal VM (instructor only)"
+  type        = number
+  default     = 2222
+}
+
+variable "portal_ocpus" {
+  type    = number
+  default = 1
+}
+
+variable "portal_memory_gb" {
+  type    = number
+  default = 8
+}
+
+variable "ssh_public_key" {
+  description = "Your public key for ubuntu@portal"
+  type        = string
+}
+
+variable "par_valid_hours" {
+  description = "How long the portal VM's read link to its bucket stays valid (it only needs it at boot)"
+  type        = number
+  default     = 72
+}

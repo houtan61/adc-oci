@@ -1,0 +1,56 @@
+#cloud-config
+write_files:
+  - path: /opt/adc-portal/fetch.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      # Pull the portal files from the class bucket (read-only PAR, valid for a few days).
+      # Re-run by hand after changing config.json / the guide in Terraform: sudo /opt/adc-portal/fetch.sh
+      set -u
+      BASE='${par_base}'
+      GUIDE='${guide_object}'
+      cd /opt/adc-portal || exit 1
+      for f in adc_portal.py pods_check.py pods_power_on.sh config.json "$GUIDE"; do
+        ok=0
+        # The internet path is the front FortiGate; give it time to boot and license.
+        for i in $(seq 1 90); do
+          if curl -fsS -o "$f.tmp" "$BASE$f"; then mv "$f.tmp" "$f"; ok=1; break; fi
+          sleep 20
+        done
+        [ "$ok" = 1 ] || { echo "fetch failed: $f" >&2; exit 1; }
+      done
+      chmod 755 adc_portal.py pods_check.py pods_power_on.sh
+      chmod 600 config.json
+      rm -rf guide guide.new && mkdir guide.new
+      python3 -m zipfile -e "$GUIDE" guide.new
+      top=$(find guide.new -mindepth 1 -maxdepth 1 -type d | head -1)
+      if [ -n "$top" ] && [ ! -f guide.new/index.html ]; then mv "$top" guide; rm -rf guide.new; else mv guide.new guide; fi
+      find guide -name .DS_Store -delete
+      ln -sf /opt/adc-portal/adc_portal.py /usr/local/bin/adc-portal
+      ln -sf /opt/adc-portal/pods_check.py /usr/local/bin/pods-check
+      ln -sf /opt/adc-portal/pods_power_on.sh /usr/local/bin/pods-power-on
+      systemctl restart adc-portal 2>/dev/null || true
+  - path: /etc/systemd/system/adc-portal.service
+    content: |
+      [Unit]
+      Description=ADC lab check-in portal
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      ExecStart=/usr/bin/python3 /opt/adc-portal/adc_portal.py serve --port 8080
+      Restart=always
+      RestartSec=3
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - mkdir -p /opt/adc-portal /var/lib/adc-portal
+  # OCI Ubuntu images reject everything but SSH in iptables
+  - iptables -I INPUT -p tcp --dport 8080 -j ACCEPT
+  - netfilter-persistent save || true
+  - /opt/adc-portal/fetch.sh
+  - systemctl daemon-reload
+  - systemctl enable --now adc-portal
+  - DEBIAN_FRONTEND=noninteractive apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q sshpass || true
