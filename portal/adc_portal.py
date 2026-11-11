@@ -31,10 +31,13 @@ import json
 import mimetypes
 import os
 import secrets
+import socket
+import subprocess
 import sys
 import threading
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -48,6 +51,9 @@ STATE = DATA_DIR / "state.json"
 ROSTER = DATA_DIR / "roster.json"
 SECRET = DATA_DIR / "secret"
 LOCK = DATA_DIR / ".lock"
+HEALTH = DATA_DIR / "health.json"
+POWER_LOG = DATA_DIR / "power-on.log"
+HEALTH_EVERY = 60
 COOKIE = "adclab"
 
 
@@ -449,6 +455,63 @@ def export_csv():
     return buf.getvalue()
 
 
+
+# ---------------------------------------------------------------- pod health + power-on
+
+_health_lock = threading.Lock()
+_power_proc = None
+
+
+def _probe(ip, port):
+    try:
+        with socket.create_connection((ip, port), timeout=3):
+            return True
+    except OSError:
+        return False
+
+
+def health_check(cfg):
+    """TCP-probe every pod's forwarded ports (FS GUI + device GUIs) from the portal VM."""
+    with _health_lock:
+        svcs = cfg.get("all_services") or cfg["services"]
+        with ThreadPoolExecutor(max_workers=64) as ex:
+            jobs = {(p["id"], s["name"]): ex.submit(_probe, p["ip"], s["clone_port"])
+                    for p in cfg["pods"] for s in svcs}
+        res = {"time": time.strftime("%Y-%m-%d %H:%M:%S"),
+               "services": [{"name": s["name"], "label": s["label"]} for s in svcs],
+               "pods": {pid: {} for pid in [p["id"] for p in cfg["pods"]]}}
+        for (pid, name), fut in jobs.items():
+            res["pods"][pid][name] = fut.result()
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        _write(HEALTH, res)
+        return res
+
+
+def health_loop():
+    while True:
+        try:
+            health_check(load_config())
+        except Exception as e:  # never kill the portal over a probe
+            sys.stderr.write(f"health check failed: {e}\n")
+        time.sleep(HEALTH_EVERY)
+
+
+def power_on(cfg, pods=None, action="install"):
+    """Run pods_power_on.sh in the background; output goes to POWER_LOG."""
+    if not cfg.get("fs_password"):
+        return "set fs_admin_password in terraform.tfvars (or run pods-power-on on the VM with FS_PASS)"
+    global _power_proc
+    if _power_proc is not None and _power_proc.poll() is None:
+        return "a power-on run is still going; check the log below"
+    env = dict(os.environ, FS_PASS=cfg["fs_password"], ACTION=action)
+    args = ["bash", str(APP_DIR / "pods_power_on.sh"), str(cfg.get("fabric_id", 1))] + (pods or [])
+    with open(POWER_LOG, "w") as log:
+        log.write(f"{time.strftime('%H:%M:%S')} runtime fabric {action} {cfg.get('fabric_id', 1)} "
+                  f"on {' '.join(pods) if pods else 'all pods'}\n")
+        log.flush()
+        _power_proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+    return f"{action} started on {' '.join(pods) if pods else 'all pods'}: FS queues it; the nested VMs take ~10 min"
+
 # ---------------------------------------------------------------- admin page
 
 class AdminHandler(Handler):
@@ -544,6 +607,13 @@ def admin_action(cfg, path, f, files):
         pod = assign(cfg, e, f.get("first") or rec.get("first", ""), f.get("last") or rec.get("last", ""),
                      f.get("pod") or None)
         return f"{e} -> {pod}" if pod else "no free pod"
+    if path == "/health":
+        r = health_check(cfg)
+        bad = sum(1 for v in r["pods"].values() for ok in v.values() if not ok)
+        return f"health checked: {bad} port(s) down" if bad else "health checked: all ports answering"
+    if path == "/power-on":
+        pod = f.get("pod")
+        return power_on(cfg, [pod] if pod else None, f.get("action") or "install")
     if path in ("/disable", "/enable"):
         return set_disabled(f.get("pod", ""), path == "/disable")
     return "unknown action"
@@ -557,6 +627,8 @@ form.inline{display:inline;margin:0} form.inline button{margin:0;padding:4px 10p
 .row{display:flex;gap:8px;align-items:end;flex-wrap:wrap} .row input{width:auto} .row button{margin-top:0}
 .msg{background:#e8f4ea;color:#1e5b2a;padding:10px 14px;border-radius:6px;margin-bottom:16px}
 .off{color:#999}
+.ok{background:#e6f4ea;color:#1e7b34;text-align:center} .bad{background:#fdecea;color:#b3261e;text-align:center;font-weight:600}
+pre{background:#1d1d1f;color:#e8e8e8;padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:260px}
 """
 
 
@@ -564,6 +636,35 @@ def _btn(action, label, **fields):
     hidden = "".join(f"<input type='hidden' name='{k}' value='{html.escape(str(v))}'>" for k, v in fields.items())
     return f"<form class='inline' method='post' action='{action}'>{hidden}<button>{label}</button></form>"
 
+
+
+def health_html(cfg):
+    h = _read(HEALTH, None)
+    pw = bool(cfg.get("fs_password"))
+    buttons = _btn("/health", "Check now") + " " + (
+        _btn("/power-on", "Power on all pods") if pw else
+        "<span class='muted'>(power-on buttons need fs_admin_password in tfvars)</span>")
+    if not h:
+        return f"<div class='card'><h2>Pod health</h2><p class='muted'>first check running…</p>{buttons}</div>"
+    head = "".join(f"<th>{html.escape(s['label'])}</th>" for s in h["services"])
+    rows, bad_pods = [], 0
+    for pid, res in h["pods"].items():
+        cells = "".join(f"<td class='{'ok' if res.get(s['name']) else 'bad'}'>{'up' if res.get(s['name']) else 'DOWN'}</td>"
+                        for s in h["services"])
+        down = not all(res.values())
+        bad_pods += down
+        act = _btn("/power-on", "power on", pod=pid) if (pw and down) else ""
+        rows.append(f"<tr><td><b>{pid}</b></td>{cells}<td>{act}</td></tr>")
+    log = ""
+    if POWER_LOG.exists():
+        tail = POWER_LOG.read_text(errors="replace").splitlines()[-25:]
+        log = f"<h2 style='margin-top:18px'>Last power-on run</h2><pre>{html.escape(chr(10).join(tail))}</pre>"
+    summary = (f"<b style='color:#b3261e'>{bad_pods} pod(s) with ports down</b>" if bad_pods
+               else "<b style='color:#1e7b34'>all pods answering</b>")
+    return (f"<div class='card'><h2>Pod health</h2><p>{summary} <span class='muted'>· checked {h['time'][11:]}"
+            f" (every {HEALTH_EVERY} s, TCP to each forwarded port from the portal)</span></p>"
+            f"<table><tr><th>Pod</th>{head}<th></th></tr>{''.join(rows)}</table>"
+            f"<p>{buttons}</p><p class='muted'>DOWN right after a build = nested VMs not started yet: power on, wait ~10 min.</p>{log}</div>")
 
 def admin_page(cfg, msg=""):
     st = load_state()
@@ -585,6 +686,7 @@ def admin_page(cfg, msg=""):
                       f"<td>{_btn('/roster/remove', 'remove', email=r['email'])}</td></tr>" for r in s["waiting"])
     mode = "roster (registered emails only)" if s["registered"] else "open check-in (no roster)"
     note = f"<div class='msg'>{html.escape(msg)}</div>" if msg else ""
+    health_card = health_html(cfg)
     title = html.escape(cfg.get("class_name", "Lab")) + " — admin"
     return f"""<!doctype html><html><head><meta charset='utf-8'><title>{title}</title>
 <meta http-equiv='refresh' content='15'><style>{ADMIN_CSS}</style></head><body><header>{title}</header><main>
@@ -597,6 +699,8 @@ def admin_page(cfg, msg=""):
 <div class='stat'><b>{s['disabled']}</b><span>pods disabled</span></div>
 </div>
 <p class='muted'>Check-in mode: {mode}. Student portal: <a href='http://{host}/' target='_blank'>http://{host}/</a> · refreshes every 15 s</p>
+
+{health_card}
 
 <div class='card'><h2>Pods</h2><table><tr><th>Pod</th><th>Name</th><th>Email</th><th>Time</th><th></th><th></th></tr>{''.join(rows)}</table>
 <p><a href='/export.csv'>Download check-ins (CSV)</a></p></div>
@@ -711,6 +815,7 @@ def main():
         if cfg.get("admin_password"):
             adm = ThreadingHTTPServer(("0.0.0.0", a.admin_port), AdminHandler)
             threading.Thread(target=adm.serve_forever, daemon=True).start()
+            threading.Thread(target=health_loop, daemon=True).start()
             print(f"admin page on :{a.admin_port}", flush=True)
         ThreadingHTTPServer(("0.0.0.0", a.port), Handler).serve_forever()
     elif a.cmd == "list":

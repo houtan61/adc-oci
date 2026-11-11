@@ -27,6 +27,8 @@ locals {
     guide_object   = local.guide_object
     fgt_admin_port = var.fgt_admin_port
     admin_password = var.portal_admin_password
+    fs_password    = var.fs_admin_password
+    fabric_id      = var.fabric_id
   }
 }
 

@@ -23,6 +23,7 @@ pod_memory_gb    = 32
 # Portal
 portal_passphrase     = "change-me"
 portal_admin_password = "change-me-too" # admin page http://<ddns>:8005/ (your admin_cidrs only)
+fs_admin_password     = "<pods' FS admin password>" # admin page power-on buttons + pods-power-on
 roster_csv        = "" # e.g. "roster.csv" (Email, First Name, Last Name columns); git-ignored
 ssh_public_key    = "ssh-rsa AAAA... you@laptop"
 

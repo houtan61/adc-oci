@@ -134,6 +134,11 @@ registered checked in, walk-ins), the pod table with release / disable buttons a
 a student, upload the registration CSV (merge or replace; only email + names are kept), add walk-ins, the
 "registered but not checked in yet" list and a CSV export. It refreshes every 15 s.
 
+**Pod health** on the same page: every minute the portal TCP-probes each pod's forwarded ports (FS GUI 443 and
+the 13xxx device GUIs) and shows a pod × port grid, with **Check now**, **Power on all pods** and a per-pod
+**power on** button next to any pod with ports down (`runtime fabric install <fabric_id>`, output shown on the
+page). The power-on buttons need `fs_admin_password` in tfvars; `pods-power-on` on the VM uses it too.
+
 The same from the CLI on the portal VM (`sudo` because the state lives in `/var/lib/adc-portal`):
 
 ```bash

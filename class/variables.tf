@@ -293,6 +293,19 @@ variable "portal_admin_password" {
   default     = ""
 }
 
+variable "fs_admin_password" {
+  description = "Pods' Fabric Studio admin password, for the admin page's power-on buttons and pods-power-on. Empty = buttons off."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "fabric_id" {
+  description = "Fabric ID in the class image (FS CLI: runtime fabric detail)"
+  type        = number
+  default     = 1
+}
+
 variable "portal_ssh_port" {
   description = "External port on the FortiGate for SSH to the portal VM (instructor only)"
   type        = number
