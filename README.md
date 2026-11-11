@@ -42,10 +42,9 @@ several minutes after OCI says *Running*.
 ### Licence server
 1. Log in at `license_server_gui`, register it to FNDN (after an OCI stop/start it can come back
    unregistered: re-register before a class).
-2. Before each class build, generate a fresh FortiFlex pool for the FortiADCs on its FS CLI
-   (`system license flex pool generate ?` lists the pool types):
+2. Before each class build, generate a fresh FortiFlex pool for the FortiADCs on its FS CLI:
    ```
-   system license flex pool generate <FAD type> <count>
+   system license flex pool generate FAD <count>
    ```
    Size it at **FortiADCs per pod × pods + a few spare** (the workshop has 2 FADs per pod; the demo's
    HA configs need 4). New pod VMs never reuse old licences; a fabric reinstall on the same pod does.
