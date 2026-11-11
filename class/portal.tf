@@ -19,6 +19,7 @@ locals {
     services       = [for s in var.services : s if !s.admin_only && s.show]
     web_terminals  = var.web_terminals
     fs_gui_suffix  = var.fs_gui_suffix
+    fs_guest       = var.fs_guest_user == "" ? null : { user = var.fs_guest_user, password = var.fs_guest_password }
     all_services   = var.services
     pods           = [for k, p in local.pods : { id = k, ip = p.ip, port_start = p.port_start }]
     roster         = local.roster

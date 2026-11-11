@@ -25,14 +25,9 @@ portal_passphrase = "change-me"
 roster_csv        = "" # e.g. "roster.csv" (Email, First Name, Last Name columns); git-ignored
 ssh_public_key    = "ssh-rsa AAAA... you@laptop"
 
-# Browser terminals: defaults cover FADCa1, FADSu1, FGT. Add zClient / webservers once their FS names are known:
-# web_terminals = [
-#   { label = "FAD-Cannes", path = "/ttyd/ssh/FADCa1/" },
-#   { label = "FAD-Sunnyvale", path = "/ttyd/ssh/FADSu1/" },
-#   { label = "Internet FortiGate", path = "/ttyd/ssh/FGT/" },
-#   { label = "zClient", path = "/ttyd/ssh/<name>/" },
-#   { label = "Cannes web servers", path = "/ttyd/ssh/<name>/" },
-# ]
+# FS guest login students use for the lab console (topology, SERIAL/SSH/VNC)
+fs_guest_user     = "guest"
+fs_guest_password = "<guest password in the class image>"
 
 # Only if the FS port redirections in your image differ from the defaults (see README)
 # services = [ ... ]

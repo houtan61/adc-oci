@@ -59,7 +59,7 @@ several minutes after OCI says *Running*.
 
    | Suffix | Pod port | Target | Portal shows |
    | --- | --- | --- | --- |
-   | 00 | 443 | FS GUI (carries the browser terminals) | terminal links, not the GUI itself |
+   | 00 | 443 | FS GUI | "Lab console" link + guest login |
    | 01 | 13002 | FADCa1 HTTPS (FS built-in forward) | FAD-Cannes GUI |
    | 03 | 13004 | FADSu1 HTTPS (FS built-in forward) | FAD-Sunnyvale GUI |
    | 05 | 13006 | FGT HTTPS (FS built-in forward) | Internet FortiGate GUI |
@@ -67,10 +67,12 @@ several minutes after OCI says *Running*.
    Student N's external port = 20000 + (N−1)×20 + suffix (s01: 20001…, s02: 20021…).
    Need more devices (DNS servers, web servers)? Add `services` entries (suffix < 20) and/or `web_terminals` lines.
    FS access links built into the GUI don't survive the port translation; redirections do.
-   SSH/shell access uses FS's **browser terminals** instead (ttyd, e.g. `/ttyd/ssh/FADCa1/` on the FS GUI),
-   as the guide intends. List them in `web_terminals` in `class/terraform.tfvars`; the portal links them
-   on the pod's FS GUI port. Because of that the FS GUI port (suffix 00) is open to the venue, not just
-   the instructor.
+   SSH / console access: students log in to their pod's FS GUI as the FS **guest** account (topology, guide,
+   SERIAL / SSH / VNC buttons, no admin rights). Those buttons ride on the FS GUI's 443 and work through the
+   front FortiGate; the HTTP/HTTPS buttons don't (they open `<host>:13xxx`, the same on every pod), so the
+   portal links the device GUIs on the student's own ports instead. Set the guest password in the builder
+   before capturing, and put it in `fs_guest_password`. The FS GUI port (suffix 00) is therefore open to the
+   venue, not just the instructor.
 4. **Stop** the builder in the OCI console, then
    *More actions → Create custom image*. Its OCID is `class_image_ocid`.
 5. `builder_enabled = false`, `terraform apply` (removes the builder).

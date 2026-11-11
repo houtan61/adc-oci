@@ -198,7 +198,7 @@ variable "services" {
     show       = optional(bool, true)
   }))
   default = [
-    # FS GUI: students need it for the browser terminals (web_terminals), so not admin_only, but not listed
+    # FS GUI: students log in as guest (lab console link on the portal), so not admin_only, but not listed
     { name = "fsgui", label = "Fabric Studio GUI", suffix = 0, clone_port = 443, proto = "https", show = false },
     { name = "fadc-gui", label = "FAD-Cannes GUI", suffix = 1, clone_port = 13002, proto = "https" },
     { name = "fads-gui", label = "FAD-Sunnyvale GUI", suffix = 3, clone_port = 13004, proto = "https" },
@@ -218,16 +218,24 @@ variable "web_terminals" {
     label = string
     path  = string
   }))
-  default = [
-    { label = "FAD-Cannes", path = "/ttyd/ssh/FADCa1/" },
-    { label = "FAD-Sunnyvale", path = "/ttyd/ssh/FADSu1/" },
-    { label = "Internet FortiGate", path = "/ttyd/ssh/FGT/" },
-  ]
+  default = []
 }
 
 variable "fs_gui_suffix" {
   type    = number
   default = 0
+}
+
+variable "fs_guest_user" {
+  description = "FS guest account students log in with: topology, guide, SERIAL/SSH/VNC to every device, no admin rights. Empty = no lab console link."
+  type        = string
+  default     = "guest"
+}
+
+variable "fs_guest_password" {
+  description = "Shown to students on the portal"
+  type        = string
+  default     = ""
 }
 
 # ---------------------------------------------------------------- portal
