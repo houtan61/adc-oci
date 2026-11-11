@@ -3,14 +3,14 @@
 # don't reliably autostart on the clones.
 #
 #   export FS_PASS='<FS admin password>'
-#   pods-power-on <fabric-id> [s01 s02 ...]           install
-#   ACTION=uninstall pods-power-on <fabric-id> [...]  uninstall
+#   pods-power-on [fabric-id] [s01 s02 ...]           install (fabric ID defaults to 1)
+#   ACTION=uninstall pods-power-on [fabric-id] [...]  uninstall
 #
-# <fabric-id> is the fabric's ID in Fabric Studio (FS CLI: runtime fabric list).
+# The ADC image has one fabric, ID 1 ("FortiADC Global App Delivery"; FS CLI: runtime fabric detail).
 # "OK" only means FS queued the task; watch Tasks in the pod's FS GUI.
 set -u
 CFG=/opt/adc-portal/config.json
-FABRIC="${1:?usage: pods-power-on <fabric-id> [pods...]}"; shift
+FABRIC="${1:-1}"; [ $# -gt 0 ] && shift
 ACTION="${ACTION:-install}"
 : "${FS_PASS:?export FS_PASS='<FS admin password>' first}"
 command -v sshpass >/dev/null || { echo "sudo apt-get install -y sshpass" >&2; exit 1; }

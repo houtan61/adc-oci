@@ -116,12 +116,12 @@ Nested VMs don't reliably start on their own. From the portal VM:
 ```bash
 ssh -p 2222 ubuntu@<ddns name>             # terraform output portal_ssh
 export FS_PASS='<FS admin password>'       # single quotes
-pods-power-on <fabric-id>                  # runtime fabric install <id> on every pod; "OK" = queued
+pods-power-on                              # runtime fabric install 1 on every pod; "OK" = queued
 pods-check                                 # TCP check of every redirected port on every pod
 ```
 
 Watch progress in a pod's FS GUI (`https://<ddns>:20000/` for s01, `:20020` for s02, …).
-`ACTION=uninstall pods-power-on <fabric-id>` reinstalls from scratch (licences come back on their own).
+`ACTION=uninstall pods-power-on 1` reinstalls from scratch (licences come back on their own).
 
 ### Portal
 `http://<ddns name>/` — class passphrase + email (+ name when there's no roster). A student gets the next
