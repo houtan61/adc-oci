@@ -53,22 +53,19 @@ several minutes after OCI says *Running*.
 1. `builder_enabled = true` in `base/terraform.tfvars`, `terraform apply`, open `builder_gui`.
 2. Import the exported FortiADC instance into Fabric Studio, point FS at the licence server
    (`http://10.20.3.10`), install the fabric and check that the FortiADCs license.
-3. Create the **FS port redirections** the front FortiGate forwards to (pod port → device:port).
+3. Check the **FS port forwards** the front FortiGate points at (pod port → device HTTPS). The imported
+   lab already has FS's built-in 13xxx forwards; the defaults use them:
    They must match `services` in `class/variables.tf`; the defaults are:
 
-   | Suffix | Pod port | Target | Shown to students as |
+   | Suffix | Pod port | Target | Portal shows |
    | --- | --- | --- | --- |
-   | 00 | 443 | FS GUI itself (no redirection) | not listed; carries the browser terminals (`web_terminals`) |
-   | 01 | 10001 | FAD-Cannes port1 :443 | FAD-Cannes GUI |
-   | 02 | 10002 | FAD-Cannes port1 :22 | FAD-Cannes SSH |
-   | 03 | 10003 | FAD-Sunnyvale port1 :443 | FAD-Sunnyvale GUI |
-   | 04 | 10004 | FAD-Sunnyvale port1 :22 | FAD-Sunnyvale SSH |
-   | 05 | 10005 | Internet FortiGate :443 | FortiGate GUI |
-   | 06 | 10006 | Internet FortiGate :22 | FortiGate SSH |
-   | 07 | 10007 | zClient :22 | zClient SSH |
+   | 00 | 443 | FS GUI (carries the browser terminals) | terminal links, not the GUI itself |
+   | 01 | 13002 | FADCa1 HTTPS (FS built-in forward) | FAD-Cannes GUI |
+   | 03 | 13004 | FADSu1 HTTPS (FS built-in forward) | FAD-Sunnyvale GUI |
+   | 05 | 13006 | FGT HTTPS (FS built-in forward) | Internet FortiGate GUI |
 
    Student N's external port = 20000 + (N−1)×20 + suffix (s01: 20001…, s02: 20021…).
-   Need more devices (DNS servers, web servers)? Add redirections and `services` entries (suffix < 20).
+   Need more devices (DNS servers, web servers)? Add `services` entries (suffix < 20) and/or `web_terminals` lines.
    FS access links built into the GUI don't survive the port translation; redirections do.
    SSH/shell access uses FS's **browser terminals** instead (ttyd, e.g. `/ttyd/ssh/FADCa1/` on the FS GUI),
    as the guide intends. List them in `web_terminals` in `class/terraform.tfvars`; the portal links them

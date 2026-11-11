@@ -25,10 +25,14 @@ portal_passphrase = "change-me"
 roster_csv        = "" # e.g. "roster.csv" (Email, First Name, Last Name columns); git-ignored
 ssh_public_key    = "ssh-rsa AAAA... you@laptop"
 
-# Browser terminals (FS ttyd paths, as shown by the SSH/console links in the FS GUI)
-web_terminals = [
-  { label = "FAD-Cannes SSH", path = "/ttyd/ssh/FADCa1/" },
-]
+# Browser terminals: defaults cover FADCa1, FADSu1, FGT. Add zClient / webservers once their FS names are known:
+# web_terminals = [
+#   { label = "FAD-Cannes", path = "/ttyd/ssh/FADCa1/" },
+#   { label = "FAD-Sunnyvale", path = "/ttyd/ssh/FADSu1/" },
+#   { label = "Internet FortiGate", path = "/ttyd/ssh/FGT/" },
+#   { label = "zClient", path = "/ttyd/ssh/<name>/" },
+#   { label = "Cannes web servers", path = "/ttyd/ssh/<name>/" },
+# ]
 
 # Only if the FS port redirections in your image differ from the defaults (see README)
 # services = [ ... ]
