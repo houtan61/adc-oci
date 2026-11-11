@@ -25,5 +25,10 @@ portal_passphrase = "change-me"
 roster_csv        = "" # e.g. "roster.csv" (Email, First Name, Last Name columns); git-ignored
 ssh_public_key    = "ssh-rsa AAAA... you@laptop"
 
+# Browser terminals (FS ttyd paths, as shown by the SSH/console links in the FS GUI)
+web_terminals = [
+  { label = "FAD-Cannes SSH", path = "/ttyd/ssh/FADCa1/" },
+]
+
 # Only if the FS port redirections in your image differ from the defaults (see README)
 # services = [ ... ]

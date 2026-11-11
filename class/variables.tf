@@ -184,6 +184,8 @@ variable "services" {
       proto      : https | ssh | other  (how the portal shows it)
       user       : login shown on the portal for ssh lines (optional)
       admin_only : true = instructor CIDRs only, not shown to students
+      show       : false = reachable by students but not listed on the portal (e.g. the FS GUI
+                   that carries the web terminals)
   EOT
   type = list(object({
     name       = string
@@ -193,9 +195,11 @@ variable "services" {
     proto      = string
     user       = optional(string, "")
     admin_only = optional(bool, false)
+    show       = optional(bool, true)
   }))
   default = [
-    { name = "fsgui", label = "Fabric Studio GUI", suffix = 0, clone_port = 443, proto = "https", admin_only = true },
+    # FS GUI: students need it for the browser terminals (web_terminals), so not admin_only, but not listed
+    { name = "fsgui", label = "Fabric Studio GUI", suffix = 0, clone_port = 443, proto = "https", show = false },
     { name = "fadc-gui", label = "FAD-Cannes GUI", suffix = 1, clone_port = 10001, proto = "https" },
     { name = "fadc-ssh", label = "FAD-Cannes SSH", suffix = 2, clone_port = 10002, proto = "ssh", user = "admin" },
     { name = "fads-gui", label = "FAD-Sunnyvale GUI", suffix = 3, clone_port = 10003, proto = "https" },
@@ -204,6 +208,26 @@ variable "services" {
     { name = "fgt-ssh", label = "Internet FortiGate SSH", suffix = 6, clone_port = 10006, proto = "ssh", user = "admin" },
     { name = "client-ssh", label = "zClient SSH", suffix = 7, clone_port = 10007, proto = "ssh", user = "root" },
   ]
+}
+
+# ---------------------------------------------------------------- browser terminals
+
+variable "web_terminals" {
+  description = <<-EOT
+    Fabric Studio web terminals (ttyd) listed on the portal, opened through the pod's FS GUI port
+    (the service with suffix fs_gui_suffix): https://<host>:<block start + suffix><path>
+    Path as FS shows it, e.g. /ttyd/ssh/FADCa1/
+  EOT
+  type = list(object({
+    label = string
+    path  = string
+  }))
+  default = []
+}
+
+variable "fs_gui_suffix" {
+  type    = number
+  default = 0
 }
 
 # ---------------------------------------------------------------- portal

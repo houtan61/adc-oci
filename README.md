@@ -58,7 +58,7 @@ several minutes after OCI says *Running*.
 
    | Suffix | Pod port | Target | Shown to students as |
    | --- | --- | --- | --- |
-   | 00 | 443 | FS GUI itself (no redirection) | instructor only |
+   | 00 | 443 | FS GUI itself (no redirection) | not listed; carries the browser terminals (`web_terminals`) |
    | 01 | 10001 | FAD-Cannes port1 :443 | FAD-Cannes GUI |
    | 02 | 10002 | FAD-Cannes port1 :22 | FAD-Cannes SSH |
    | 03 | 10003 | FAD-Sunnyvale port1 :443 | FAD-Sunnyvale GUI |
@@ -70,6 +70,10 @@ several minutes after OCI says *Running*.
    Student N's external port = 20000 + (N−1)×20 + suffix (s01: 20001…, s02: 20021…).
    Need more devices (DNS servers, web servers)? Add redirections and `services` entries (suffix < 20).
    FS access links built into the GUI don't survive the port translation; redirections do.
+   SSH/shell access uses FS's **browser terminals** instead (ttyd, e.g. `/ttyd/ssh/FADCa1/` on the FS GUI),
+   as the guide intends. List them in `web_terminals` in `class/terraform.tfvars`; the portal links them
+   on the pod's FS GUI port. Because of that the FS GUI port (suffix 00) is open to the venue, not just
+   the instructor.
 4. **Stop** the builder in the OCI console, then
    *More actions → Create custom image*. Its OCID is `class_image_ocid`.
 5. `builder_enabled = false`, `terraform apply` (removes the builder).
@@ -117,7 +121,7 @@ pods-power-on <fabric-id>                  # runtime fabric install <id> on ever
 pods-check                                 # TCP check of every redirected port on every pod
 ```
 
-Watch progress in a pod's FS GUI (`https://<ddns>:20000/` for s01, `:20020` for s02, …; instructor only).
+Watch progress in a pod's FS GUI (`https://<ddns>:20000/` for s01, `:20020` for s02, …).
 `ACTION=uninstall pods-power-on <fabric-id>` reinstalls from scratch (licences come back on their own).
 
 ### Portal

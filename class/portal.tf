@@ -16,7 +16,9 @@ locals {
     public_host    = local.public_host
     port_base      = var.port_base
     port_block     = var.port_block
-    services       = [for s in var.services : s if !s.admin_only]
+    services       = [for s in var.services : s if !s.admin_only && s.show]
+    web_terminals  = var.web_terminals
+    fs_gui_suffix  = var.fs_gui_suffix
     all_services   = var.services
     pods           = [for k, p in local.pods : { id = k, ip = p.ip, port_start = p.port_start }]
     roster         = local.roster

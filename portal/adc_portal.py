@@ -218,6 +218,12 @@ def pod_page(cfg, pod, who):
             rows.append(f"<tr><td>{label}</td><td><code>ssh -p {port} {html.escape(user)}@{host}</code></td></tr>")
         else:
             rows.append(f"<tr><td>{label}</td><td><code>{host}:{port}</code></td></tr>")
+    terms = []
+    for t in cfg.get("web_terminals", []):
+        url = f"https://{host}:{p['port_start'] + cfg.get('fs_gui_suffix', 0)}{t['path']}"
+        terms.append(f"<tr><td>{html.escape(t['label'])}</td><td><a href='{html.escape(url)}' target='_blank'>open terminal</a></td></tr>")
+    term_card = (f"<div class='card'><h2>Terminals (in your browser)</h2><table>{''.join(terms)}</table></div>"
+                 if terms else "")
     creds = "".join(
         f"<tr><td>{html.escape(c['device'])}</td><td><code>{html.escape(c['user'])}</code></td>"
         f"<td><code>{html.escape(c['password'])}</code></td></tr>" for c in cfg.get("credentials", []))
@@ -230,6 +236,7 @@ def pod_page(cfg, pod, who):
 <p class='muted'>Browsers will warn about the self-signed certificates on the lab devices; accept them to continue.</p>
 {guide}</div>
 <div class='card'><h2>Your devices</h2><table>{''.join(rows)}</table></div>
+{term_card}
 <div class='card'><h2>Logins</h2><table><tr><th>Device</th><th>User</th><th>Password</th></tr>{creds}</table></div>
 <p class='muted'>Not you? <a href='/forget'>Check in again</a></p>""")
 
