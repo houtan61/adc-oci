@@ -147,6 +147,12 @@ the 13xxx device GUIs) and shows a pod × port grid, with **Check now**, **Power
 **power on** button next to any pod with ports down (`runtime fabric install <fabric_id>`, output shown on the
 page). The power-on buttons need `fs_admin_password` in tfvars; `pods-power-on` on the VM uses it too.
 
+**Align FS access ports** (also the first step of every power-on from the page): on each pod it sets
+`https_public_allowed` and an 8 h `web_session_age`, then for every service with an `fs_access_id` runs
+`model vm access update <id> '{"fport": <student port>, "mode": "PUBLIC"}'`. The FS lab console's HTTPS
+buttons then link to `<ddns>:<student port>` (FS keeps proxying on 13xxx, where the VIPs point), so students can
+use them instead of the portal links. Pods are clones, so this must run per pod after every build.
+
 **Licence pool** on the same page: reads `system license list` on the licence server (10.20.3.10, same FS admin
 password) every 5 min or on **Refresh list**, shows each pool type (FAD, FGT) against pods × `license_per_pod`
 (green = enough, red = short by N), the serial list, and a **Generate** form (type drop-down + count) that runs

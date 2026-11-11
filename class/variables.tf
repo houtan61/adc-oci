@@ -199,6 +199,9 @@ variable "services" {
       user       : login shown on the portal for ssh lines (optional)
       admin_only : true = instructor CIDRs only, not shown to students
       path       : URL path for https links (FS publishes FortiADC under /ui/)
+      fs_access_id : FS access (model vm access list) behind this port. The portal sets its front port
+                   (fport) to the student's port on every pod, so the FS lab console's HTTPS buttons link to
+                   <host>:<student port>. FS keeps proxying on clone_port.
       show       : false = reachable by students but not listed on the portal (e.g. the FS GUI
                    that carries the web terminals)
   EOT
@@ -212,14 +215,15 @@ variable "services" {
     admin_only = optional(bool, false)
     show       = optional(bool, true)
     path       = optional(string, "/")
+    fs_access_id = optional(number)
   }))
   default = [
     # FS GUI: students log in as guest (lab console link on the portal), so not admin_only, but not listed
     { name = "fsgui", label = "Fabric Studio GUI", suffix = 0, clone_port = 443, proto = "https", show = false },
     # FS HTTPS accesses (reverse proxy): must be PUBLIC in the image, see README
-    { name = "fadc-gui", label = "FAD-Cannes GUI", suffix = 1, clone_port = 13002, proto = "https", path = "/ui/" },
-    { name = "fads-gui", label = "FAD-Sunnyvale GUI", suffix = 3, clone_port = 13004, proto = "https", path = "/ui/" },
-    { name = "fgt-gui", label = "Internet FortiGate GUI", suffix = 5, clone_port = 13006, proto = "https" },
+    { name = "fadc-gui", label = "FAD-Cannes GUI", suffix = 1, clone_port = 13002, proto = "https", path = "/ui/", fs_access_id = 9 },
+    { name = "fads-gui", label = "FAD-Sunnyvale GUI", suffix = 3, clone_port = 13004, proto = "https", path = "/ui/", fs_access_id = 21 },
+    { name = "fgt-gui", label = "Internet FortiGate GUI", suffix = 5, clone_port = 13006, proto = "https", fs_access_id = 33 },
   ]
 }
 

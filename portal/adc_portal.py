@@ -462,7 +462,6 @@ def export_csv():
 # ---------------------------------------------------------------- pod health + power-on
 
 _health_lock = threading.Lock()
-_power_proc = None
 
 
 def _probe(ip, port):
@@ -499,21 +498,90 @@ def health_loop():
         time.sleep(HEALTH_EVERY)
 
 
-def power_on(cfg, pods=None, action="install"):
-    """Run pods_power_on.sh in the background; output goes to POWER_LOG."""
+def fs_access_jobs(cfg, pods=None):
+    """(pod, ip, access_id, port) for every service tied to an FS access (fs_access_id)."""
+    jobs = []
+    for p in cfg["pods"]:
+        if pods and p["id"] not in pods:
+            continue
+        for s in cfg.get("all_services") or cfg["services"]:
+            if s.get("fs_access_id"):
+                jobs.append((p["id"], p["ip"], s["fs_access_id"], p["port_start"] + s["suffix"], s["label"]))
+    return jobs
+
+
+def align_accesses(cfg, pods, log):
+    """Per pod: allow public HTTPS accesses + set the web session age, then point each FS access's front port
+    (fport) at the student's external port and make it PUBLIC, so the lab console's HTTPS buttons link to
+    <host>:<student port>. FS keeps proxying on its 13xxx port; the VIPs map to that."""
+    jobs = fs_access_jobs(cfg, pods)
+    if not jobs:
+        log.write("no fs_access_id in services: nothing to align\n")
+        return 0
+    def one(j):
+        pod, ip, aid, port, label = j
+        ok, out = fs_cli(ip, cfg["fs_password"],
+                         f"model vm access update {aid} '{{\"fport\": {port}, \"mode\": \"PUBLIC\"}}'", timeout=60)
+        return pod, label, port, ok, (out.splitlines() or [""])[-1]
+    # Per pod once: HTTPS accesses may be public (still only reachable through the front FGT),
+    # and web sessions (guest lab console) last a class day instead of 1 h.
+    prefs = [
+        """system security preferences set '{"https_public_allowed": "yes"}'""",
+        f"""system security preferences set '{{"web_session_age": {int(cfg.get("fs_web_session_age", 28800))}}}'""",
+    ]
+    def pod_prefs(p):
+        res = [fs_cli(p[1], cfg["fs_password"], c, timeout=60) for c in prefs]
+        return p[0], all(ok for ok, _ in res), (res[-1][1].splitlines() or [""])[-1]
+    pods_ip = sorted({(j[0], j[1]) for j in jobs})
+    bad = 0
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        for pod, ok, last in ex.map(pod_prefs, pods_ip):
+            bad += not ok
+            log.write(f"{pod} FS prefs (https public, web session)  {'OK  ' if ok else 'FAIL'} {last}\n")
+            log.flush()
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        for pod, label, port, ok, last in ex.map(one, jobs):
+            bad += not ok
+            log.write(f"{pod} {label:<24} fport {port}  {'OK  ' if ok else 'FAIL'} {last}\n")
+            log.flush()
+    return bad
+
+
+_job_thread = None
+
+
+def start_job(cfg, pods=None, action="install", align=True, power=True):
+    """Background job: align FS access ports, then runtime fabric <action> (pods_power_on.sh). Log in POWER_LOG."""
+    global _job_thread
     if not cfg.get("fs_password"):
         return "set fs_admin_password in terraform.tfvars (or run pods-power-on on the VM with FS_PASS)"
-    global _power_proc
-    if _power_proc is not None and _power_proc.poll() is None:
-        return "a power-on run is still going; check the log below"
-    env = dict(os.environ, FS_PASS=cfg["fs_password"], ACTION=action)
-    args = ["bash", str(APP_DIR / "pods_power_on.sh"), str(cfg.get("fabric_id", 1))] + (pods or [])
-    with open(POWER_LOG, "w") as log:
-        log.write(f"{time.strftime('%H:%M:%S')} runtime fabric {action} {cfg.get('fabric_id', 1)} "
-                  f"on {' '.join(pods) if pods else 'all pods'}\n")
-        log.flush()
-        _power_proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
-    return f"{action} started on {' '.join(pods) if pods else 'all pods'}: FS queues it; the nested VMs take ~10 min"
+    if _job_thread is not None and _job_thread.is_alive():
+        return "a job is still running; check the log below"
+    where = " ".join(pods) if pods else "all pods"
+
+    def run():
+        with open(POWER_LOG, "w") as log:
+            if align:
+                log.write(f"{time.strftime('%H:%M:%S')} align FS access ports on {where}\n")
+                log.flush()
+                align_accesses(cfg, pods, log)
+            if power:
+                log.write(f"{time.strftime('%H:%M:%S')} runtime fabric {action} {cfg.get('fabric_id', 1)} on {where}\n")
+                log.flush()
+                env = dict(os.environ, FS_PASS=cfg["fs_password"], ACTION=action)
+                args = ["bash", str(APP_DIR / "pods_power_on.sh"), str(cfg.get("fabric_id", 1))] + (pods or [])
+                subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, env=env)
+            log.write(f"{time.strftime('%H:%M:%S')} done\n")
+
+    _job_thread = threading.Thread(target=run, daemon=True)
+    _job_thread.start()
+    if power:
+        return f"started on {where}: align access ports, then {action}. The nested VMs take ~10 min"
+    return f"aligning FS access ports on {where}"
+
+
+def power_on(cfg, pods=None, action="install"):
+    return start_job(cfg, pods, action, align=True, power=True)
 
 
 # ---------------------------------------------------------------- licence server (FS FortiFlex pool)
@@ -775,6 +843,9 @@ def admin_action(cfg, path, f, files):
         r = health_check(cfg)
         bad = sum(1 for v in r["pods"].values() for ok in v.values() if not ok)
         return f"health checked: {bad} port(s) down" if bad else "health checked: all ports answering"
+    if path == "/align":
+        pod = f.get("pod")
+        return start_job(cfg, [pod] if pod else None, align=True, power=False)
     if path == "/power-on":
         pod = f.get("pod")
         return power_on(cfg, [pod] if pod else None, f.get("action") or "install")
@@ -811,7 +882,7 @@ def health_html(cfg):
     h = _read(HEALTH, None)
     pw = bool(cfg.get("fs_password"))
     buttons = _btn("/health", "Check now") + " " + (
-        _btn("/power-on", "Power on all pods") if pw else
+        _btn("/power-on", "Power on all pods") + " " + _btn("/align", "Align FS access ports") if pw else
         "<span class='muted'>(power-on buttons need fs_admin_password in tfvars)</span>")
     if not h:
         return f"<div class='card'><h2>Pod health</h2><p class='muted'>first check running…</p>{buttons}</div>"
@@ -827,7 +898,7 @@ def health_html(cfg):
     log = ""
     if POWER_LOG.exists():
         tail = POWER_LOG.read_text(errors="replace").splitlines()[-25:]
-        log = f"<h2 style='margin-top:18px'>Last power-on run</h2><pre>{html.escape(chr(10).join(tail))}</pre>"
+        log = f"<h2 style='margin-top:18px'>Last power-on / align run</h2><pre>{html.escape(chr(10).join(tail))}</pre>"
     summary = (f"<b style='color:#b3261e'>{bad_pods} pod(s) with ports down</b>" if bad_pods
                else "<b style='color:#1e7b34'>all pods answering</b>")
     return (f"<div class='card'><h2>Pod health</h2><p>{summary} <span class='muted'>· checked {h['time'][11:]}"
