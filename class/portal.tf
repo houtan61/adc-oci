@@ -64,9 +64,9 @@ resource "time_offset" "par_expiry" {
 }
 
 resource "oci_objectstorage_preauthrequest" "portal" {
-  namespace             = local.ns
-  bucket                = oci_objectstorage_bucket.portal.name
-  name                  = "portal-boot-read"
+  namespace    = local.ns
+  bucket       = oci_objectstorage_bucket.portal.name
+  name         = "portal-boot-read"
   access_type  = "AnyObjectRead"
   time_expires = time_offset.par_expiry.rfc3339
 
