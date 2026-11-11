@@ -128,7 +128,7 @@ Watch progress in a pod's FS GUI (`https://<ddns>:20000/` for s01, `:20020` for 
 free pod, a page with their device links / SSH commands / logins, and the lab guide at `/guide/`.
 Unregistered emails are told to see the instructor.
 
-**Admin page** `http://<ddns name>:8005/` (`terraform output portal_admin_url`; any user name +
+**Admin page** `http://<ddns name>:8005/` (`terraform output portal_admin_url`; log in on the page as `admin` +
 `portal_admin_password`, reachable from `admin_cidrs` only, plain HTTP): live counts (pods in use / free,
 registered checked in, walk-ins), the pod table with release / disable buttons and FS links, assign / move
 a student, upload the registration CSV (merge or replace; only email + names are kept), add walk-ins, the

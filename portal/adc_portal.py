@@ -18,7 +18,6 @@ No roster = open check-in (passphrase + name + email).
 """
 
 import argparse
-import base64
 import csv
 import email
 import email.policy
@@ -648,28 +647,51 @@ def license_html(cfg):
 
 class AdminHandler(Handler):
     server_version = "adc-portal-admin"
+    COOKIE = "adcadmin"
+    TTL = 12 * 3600
 
-    def _auth(self):
-        pw = load_config().get("admin_password") or ""
-        h = self.headers.get("Authorization", "")
-        if pw and h.startswith("Basic "):
-            try:
-                user, _, given = base64.b64decode(h[6:]).decode().partition(":")
-            except Exception:
-                given = ""
-            if hmac.compare_digest(given.encode(), pw.encode()):
-                return True
-        self.send_response(401)
-        self.send_header("WWW-Authenticate", 'Basic realm="adc-portal admin"')
-        self.send_header("Content-Length", "0")
-        self.end_headers()
-        return False
+    def _token(self, exp):
+        return f"{exp}.{hmac.new(secret_key(), f'admin|{exp}'.encode(), hashlib.sha256).hexdigest()[:40]}"
+
+    def _authed(self):
+        raw = self.headers.get("Cookie")
+        if not raw:
+            return False
+        c = cookies.SimpleCookie()
+        try:
+            c.load(raw)
+        except cookies.CookieError:
+            return False
+        if self.COOKIE not in c:
+            return False
+        exp, _, _mac = c[self.COOKIE].value.partition(".")
+        try:
+            if int(exp) < time.time():
+                return False
+        except ValueError:
+            return False
+        return hmac.compare_digest(c[self.COOKIE].value, self._token(exp))
+
+    def _login_page(self, cfg, error=""):
+        err = f"<div class='err'>{html.escape(error)}</div>" if error else ""
+        body = f"""
+<div class='card' style='max-width:380px;margin:40px auto'><h1>Admin login</h1>
+<form method='post' action='/login'>
+<label>User</label><input name='user' value='admin' autocomplete='username'>
+<label>Password</label><input name='password' type='password' autofocus autocomplete='current-password'>
+<button type='submit'>Log in</button></form>{err}</div>"""
+        title = html.escape(cfg.get("class_name", "Lab")) + " — admin"
+        return (f"<!doctype html><html><head><meta charset='utf-8'><title>{title}</title>"
+                f"<meta name='viewport' content='width=device-width,initial-scale=1'><style>{CSS}</style></head>"
+                f"<body><header>{title}</header><main>{body}</main></body></html>")
 
     def do_GET(self):
-        if not self._auth():
-            return
         cfg = load_config()
         u = urllib.parse.urlparse(self.path)
+        if u.path == "/logout":
+            return self._redirect("/", f"{self.COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict")
+        if not self._authed():
+            return self._send(200, self._login_page(cfg))
         if u.path == "/export.csv":
             return self._send(200, export_csv(), "text/csv; charset=utf-8",
                               {"Content-Disposition": "attachment; filename=checkins.csv"})
@@ -681,12 +703,22 @@ class AdminHandler(Handler):
         self._send(200, admin_page(cfg, msg))
 
     def do_POST(self):
-        if not self._auth():
-            return
         cfg = load_config()
         path = urllib.parse.urlparse(self.path).path
         length = min(int(self.headers.get("Content-Length") or 0), 5_000_000)
         body = self.rfile.read(length)
+        if path == "/login":
+            f = {k: v[0] for k, v in urllib.parse.parse_qs(body.decode(errors="replace")).items()}
+            pw = cfg.get("admin_password") or ""
+            if pw and f.get("user", "").strip() == "admin" and hmac.compare_digest(
+                    f.get("password", "").encode(), pw.encode()):
+                exp = int(time.time()) + self.TTL
+                return self._redirect("/", f"{self.COOKIE}={self._token(exp)}; Max-Age={self.TTL}; "
+                                           f"Path=/; HttpOnly; SameSite=Strict")
+            time.sleep(1)
+            return self._send(200, self._login_page(cfg, "Wrong user or password."))
+        if not self._authed():
+            return self._redirect("/")
         ctype = self.headers.get("Content-Type", "")
         if ctype.startswith("multipart/form-data"):
             msg_ = email.message_from_bytes(b"Content-Type: " + ctype.encode() + b"\r\n\r\n" + body,
@@ -836,7 +868,7 @@ def admin_page(cfg, msg=""):
 <div class='stat'><b>{s['walk_ins']}</b><span>not on roster</span></div>
 <div class='stat'><b>{s['disabled']}</b><span>pods disabled</span></div>
 </div>
-<p class='muted'>Check-in mode: {mode}. Student portal: <a href='http://{host}/' target='_blank'>http://{host}/</a> · refreshes every 15 s</p>
+<p class='muted'>Check-in mode: {mode}. Student portal: <a href='http://{host}/' target='_blank'>http://{host}/</a> · refreshes every 15 s · <a href='/logout'>Log out</a></p>
 
 {health_card}
 

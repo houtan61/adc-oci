@@ -293,7 +293,7 @@ variable "portal_admin_port" {
 }
 
 variable "portal_admin_password" {
-  description = "Password for the admin page (any user name). Empty = admin page off."
+  description = "Password for the admin page (user admin, login form on the page). Empty = admin page off."
   type        = string
   sensitive   = true
   default     = ""
